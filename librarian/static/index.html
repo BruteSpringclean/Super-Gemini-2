@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Super Gemini Librarian</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">◐◑</span>
+    <div>
+      <h1>Super Gemini Librarian</h1>
+      <div class="sub">UDO Super Gemini · Super 8</div>
+    </div>
+  </div>
+  <div class="device-status" id="deviceStatus">Looking for synth…</div>
+  <div class="actions">
+    <button id="btnRefresh" title="Rescan the drive">↻ Rescan</button>
+    <button id="btnImportAll" class="needs-device" title="Copy every preset on the synth into your library">⇩ Import all from synth</button>
+    <button id="btnBackup" class="needs-device" title="Save a full snapshot of the synth">Back up synth</button>
+    <button id="btnEject" class="needs-device" title="Safely eject the GEMINI drive">⏏ Eject</button>
+    <button id="btnSettings" title="Settings and backups">⚙</button>
+    <button id="btnQuit" title="Stop the librarian">Quit</button>
+  </div>
+</header>
+
+<main>
+  <section class="panel library" id="libraryPanel">
+    <div class="panel-head">
+      <h2>Library <span class="count" id="libCount"></span></h2>
+      <input id="search" type="search" placeholder="Search name, tag, notes…">
+    </div>
+    <div class="tag-filter" id="tagFilter"></div>
+    <div class="dropzone" id="libDrop">
+      Drag <b>.usg</b> files here from Finder, or drag a slot from the synth to save it.
+      <label class="link">or choose files…<input type="file" id="fileInput" multiple hidden></label>
+    </div>
+    <ul class="preset-list" id="presetList"></ul>
+  </section>
+
+  <section class="panel device" id="devicePanel">
+    <div class="panel-head">
+      <h2>Synth</h2>
+      <div class="section-tabs" id="sectionTabs"></div>
+    </div>
+    <div class="device-help" id="deviceHelp">
+      <h3>Connect your Super Gemini</h3>
+      <ol>
+        <li>Switch the Super Gemini <b>off</b>.</li>
+        <li>Hold the <b>PATCH</b> button and switch it on. Release once the LEDs settle.</li>
+        <li>Connect USB to your Mac. A disk called <b>GEMINI</b> (or <b>SUPER8</b>) appears.</li>
+        <li>This page finds it automatically.</li>
+      </ol>
+    </div>
+    <div class="banks" id="banks"></div>
+  </section>
+
+  <aside class="panel details" id="details" hidden></aside>
+</main>
+
+<footer class="pending" id="pendingBar" hidden>
+  <div id="pendingText"></div>
+  <div class="pending-actions">
+    <button id="btnDiscard">Discard</button>
+    <button id="btnWrite" class="primary">Send to synth</button>
+  </div>
+</footer>
+
+<dialog id="settingsDialog">
+  <form method="dialog">
+    <h2>Settings</h2>
+    <label>Synth drive location
+      <input id="drivePath" placeholder="/Volumes/GEMINI">
+    </label>
+    <p class="hint">Leave empty to look for <code>/Volumes/GEMINI</code> and <code>/Volumes/SUPER8</code>.</p>
+    <p class="hint">Library folder: <code id="homePath"></code> <a href="#" id="revealHome">Show in Finder</a></p>
+    <h3>Synth backups</h3>
+    <p class="hint">A backup is taken automatically before every write. Restoring also backs up the current state first.</p>
+    <ul class="backup-list" id="backupList"></ul>
+    <div class="dialog-actions">
+      <button value="cancel">Close</button>
+      <button id="saveSettings" value="save" class="primary">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<div class="toast" id="toast" hidden></div>
+<script src="app.js"></script>
+</body>
+</html>
