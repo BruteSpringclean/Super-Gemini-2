@@ -32,7 +32,9 @@ DEFAULT_EXTENSION = ".usg"
 DRIVE_NAMES = ("GEMINI", "SUPER8")
 
 BANK_DIR_RE = re.compile(r"^[a-h][12]$", re.IGNORECASE)
-SLOT_FILE_RE = re.compile(r"^p([1-8])(?:[_\- ](.*))?(\.[A-Za-z0-9]+)$", re.IGNORECASE)
+# Only .usg files are ever treated as presets, so the librarian can neither
+# write nor delete anything else on the synth's drive.
+SLOT_FILE_RE = re.compile(r"^p([1-8])(?:[_\- ](.*))?(\.usg)$", re.IGNORECASE)
 SKIP_DIRS = {".trashes", ".spotlight-v100", ".fseventsd", ".temporaryitems", "system volume information"}
 JUNK_FILES = {".ds_store"}
 MAX_SCAN_DEPTH = 4
@@ -73,8 +75,12 @@ def safe_file_stem(name):
     return (stem or "preset")[:40]
 
 
-def slot_filename(slot, name, ext):
-    return "p%d_%s%s" % (slot, safe_file_stem(name), ext or DEFAULT_EXTENSION)
+def slot_filename(slot, name):
+    return "p%d_%s%s" % (slot, safe_file_stem(name), DEFAULT_EXTENSION)
+
+
+def is_preset_filename(filename):
+    return os.path.splitext(filename)[1].lower() == DEFAULT_EXTENSION
 
 
 class LibrarianError(Exception):
@@ -146,9 +152,11 @@ class Library:
 
     def add(self, data, filename, kind=None, tags=None, source=None):
         """Add raw preset bytes. Returns (preset, created)."""
+        if not is_preset_filename(filename):
+            raise LibrarianError("%s is not a Super Gemini preset (.usg file)" % filename)
         if not data:
             raise LibrarianError("%s is empty" % filename)
-        ext = os.path.splitext(filename)[1].lower() or DEFAULT_EXTENSION
+        ext = DEFAULT_EXTENSION
         pid = content_id(data)
         with self.lock:
             existing = self.data["presets"].get(pid)
@@ -396,6 +404,8 @@ def write_slots(root, library, changes):
         if not 1 <= slot <= SLOTS_PER_BANK:
             raise LibrarianError("Slot must be 1-%d" % SLOTS_PER_BANK)
         preset = library.get(ch["presetId"]) if ch.get("presetId") else None
+        if preset and preset.get("ext", DEFAULT_EXTENSION) != DEFAULT_EXTENSION:
+            raise LibrarianError("%s is not a .usg preset and cannot be sent to the synth" % preset["name"])
         plan.append((safe_join(root, bank), slot, preset))
 
     backup = backup_drive(root, library, label="before_write")
@@ -405,7 +415,7 @@ def write_slots(root, library, changes):
             if m and not is_junk(f) and int(m.group(1)) == slot:
                 os.remove(os.path.join(bank_dir, f))
         if preset:
-            target = os.path.join(bank_dir, slot_filename(slot, preset["name"], preset.get("ext")))
+            target = os.path.join(bank_dir, slot_filename(slot, preset["name"]))
             shutil.copyfile(library.preset_path(preset), target)
     clean_junk(root)
     sync_disk()

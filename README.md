@@ -83,6 +83,8 @@ Everything lives in `~/Music/Super Gemini Librarian/`:
   The librarian deletes them from the drive after each write and on eject.
 - Patch files carry no name inside them (the synth has no screen). The name you see is the
   library name, and it becomes the file name when the preset is written to a slot.
+- Only `.usg` preset files are accepted. Other files (such as `.syx` dumps from other synths) are
+  skipped, and the librarian never writes or deletes anything on the synth except `p1_…`–`p8_….usg` files.
 - The librarian only listens on your own Mac (`127.0.0.1`). Nothing is shared on the network.
 
 ## For developers

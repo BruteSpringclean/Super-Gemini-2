@@ -298,10 +298,9 @@ async function filesFromDataTransfer(dt) {
   return out;
 }
 
+// Only Super Gemini .usg presets are accepted; anything else could confuse the synth.
 function isPresetFile(name) {
-  if (name.startsWith(".")) return false;
-  const lower = name.toLowerCase();
-  return lower.endsWith(".usg") || !/\.(txt|pdf|md|png|jpe?g|zip|bin|wav|rtf|html?)$/.test(lower);
+  return !name.startsWith(".") && name.toLowerCase().endsWith(".usg");
 }
 
 async function uploadFiles(items) {
@@ -318,8 +317,10 @@ async function uploadFiles(items) {
     if (res.created) created++;
   }
   const dupes = presets.length - created;
-  toast(`Added ${created} preset${created === 1 ? "" : "s"} to the library` +
-    (dupes ? ` (${dupes} already there)` : "") + (skipped ? `, skipped ${skipped} non-preset file(s)` : ""));
+  const skippedMsg = skipped ? `Skipped ${skipped} file(s) that aren't Super Gemini presets (.usg).` : "";
+  if (!presets.length && skipped) toast(skippedMsg, true, 8000);
+  else toast(`Added ${created} preset${created === 1 ? "" : "s"} to the library` +
+    (dupes ? ` (${dupes} already there)` : "") + "." + (skippedMsg ? " " + skippedMsg : ""), !!skipped, skipped ? 8000 : 5000);
   await refresh(true);
   return presets;
 }

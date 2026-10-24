@@ -60,6 +60,31 @@ class LibrarianTest(unittest.TestCase):
         reloaded = core.Library(self.lib.home)
         self.assertEqual(reloaded.get(p["id"])["tags"], ["pad"])
 
+    def test_library_rejects_non_usg_files(self):
+        for name in ("patch.syx", "readme.txt", "noextension", "gxos_v1.00.bin"):
+            with self.assertRaises(core.LibrarianError):
+                self.lib.add(b"data", name)
+        self.assertEqual(self.lib.list(), [])
+
+    def test_write_refuses_legacy_non_usg_preset(self):
+        p, _ = self.lib.add(b"x", "x.usg")
+        p["ext"] = ".syx"  # e.g. added by an older version
+        with self.assertRaises(core.LibrarianError):
+            core.write_slots(self.drive, self.lib, [{"bank": "patches/a1", "slot": 1, "presetId": p["id"]}])
+        self.assertIn("p1_a1_sound_1.usg", self.bank_files("a1"))
+
+    def test_non_usg_files_on_drive_are_never_touched(self):
+        d = os.path.join(self.drive, "patches", "a1")
+        with open(os.path.join(d, "p3_notes.txt"), "w") as f:
+            f.write("keep me")
+        open(os.path.join(self.drive, "gxos_v1.00.bin"), "wb").close()
+        slot = core.scan_drive(self.drive)[0]["banks"][0]["slots"][2]
+        self.assertEqual(slot["files"], ["p3_a1_sound_3.usg"])
+        p, _ = self.lib.add(b"x", "x.usg")
+        core.write_slots(self.drive, self.lib, [{"bank": "patches/a1", "slot": 3, "presetId": p["id"]}])
+        self.assertIn("p3_notes.txt", self.bank_files("a1"))
+        self.assertTrue(os.path.exists(os.path.join(self.drive, "gxos_v1.00.bin")))
+
     def test_update_tags_and_notes(self):
         p, _ = self.lib.add(b"abc", "bass.usg")
         self.lib.update(p["id"], {"tags": ["Bass", " ", "mono", "Bass"], "notes": "hi", "favorite": True})
@@ -168,6 +193,11 @@ class ApiTest(unittest.TestCase):
         slot = st["device"]["sections"][0]["banks"][1]["slots"][2]
         self.assertEqual(slot["name"], "Big Pad")
         self.assertEqual(len(st["backups"]), 1)
+
+    def test_upload_non_usg_refused(self):
+        status, res = self.call("POST", "/api/library/upload", b"F0 7E F7", {"X-Filename": "dump.syx"})
+        self.assertEqual(status, 400)
+        self.assertIn(".usg", res["error"])
 
     def test_cross_origin_writes_refused(self):
         status, _ = self.call("POST", "/api/device/backup", {}, {"Origin": "https://evil.example"})
