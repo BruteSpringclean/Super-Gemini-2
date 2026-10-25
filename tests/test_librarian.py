@@ -1,3 +1,4 @@
+import errno
 import json
 import os
 import shutil
@@ -5,6 +6,7 @@ import tempfile
 import threading
 import unittest
 import urllib.request
+from unittest import mock
 from http.server import ThreadingHTTPServer
 
 from librarian import core, server
@@ -103,7 +105,9 @@ class LibrarianTest(unittest.TestCase):
             self.assertEqual(f.read(), b"new sound")
         backup = os.path.join(self.lib.backup_dir, res["backup"], "patches", "c2", "p5_c2_sound_5.usg")
         self.assertTrue(os.path.exists(backup))
-        self.assertTrue(os.path.exists(os.path.join(self.lib.backup_dir, res["backup"], "init_patch.usg")))
+        full = core.backup_drive(self.drive, self.lib)
+        self.assertEqual(full["files"], 129)
+        self.assertTrue(os.path.exists(os.path.join(self.lib.backup_dir, full["name"], "init_patch.usg")))
 
     def test_write_clear_slot(self):
         core.write_slots(self.drive, self.lib, [{"bank": "patches/a1", "slot": 1, "presetId": None}])
@@ -127,12 +131,79 @@ class LibrarianTest(unittest.TestCase):
 
     def test_import_and_device_matches_library(self):
         res = core.import_from_drive(self.drive, self.lib)
-        self.assertEqual(res, {"added": 128, "seen": 128})
+        self.assertEqual(res, {"added": 128, "seen": 128, "failed": []})
         slot = core.describe_device(self.drive, self.lib)[0]["banks"][3]["slots"][6]
         self.assertEqual(slot["name"], "d1 sound 7")
         self.assertIsNotNone(slot["presetId"])
         res = core.import_from_drive(self.drive, self.lib, bank="patches/a1", slot=1)
-        self.assertEqual(res, {"added": 0, "seen": 1})
+        self.assertEqual(res, {"added": 0, "seen": 1, "failed": []})
+
+    def flaky_reads(self, bad_names, fail_times=99):
+        """Make reads of the named files fail with EIO, like the real synth drive did."""
+        real_open = open
+        counts = {}
+
+        def fake_open(path, mode="r", *args, **kwargs):
+            name = os.path.basename(str(path))
+            if "r" in mode and name in bad_names and str(path).startswith(self.drive):
+                counts[name] = counts.get(name, 0) + 1
+                if counts[name] <= fail_times:
+                    raise OSError(errno.EIO, "Input/output error", str(path))
+            return real_open(path, mode, *args, **kwargs)
+        return mock.patch("builtins.open", fake_open)
+
+    def test_write_retries_transient_io_errors(self):
+        p, _ = self.lib.add(b"new", "new.usg")
+        with mock.patch("time.sleep"), self.flaky_reads({"p3_a1_sound_3.usg"}, fail_times=2):
+            res = core.write_slots(self.drive, self.lib, [{"bank": "patches/a1", "slot": 3, "presetId": p["id"]}])
+        self.assertEqual(res["written"], 1)
+        self.assertIn("p3_new.usg", self.bank_files("a1"))
+        backup = os.path.join(self.lib.backup_dir, res["backup"], "patches", "a1", "p3_a1_sound_3.usg")
+        self.assertTrue(os.path.exists(backup))
+
+    def test_write_aborts_cleanly_when_replaced_file_unreadable(self):
+        p, _ = self.lib.add(b"new", "new.usg")
+        before = self.bank_files("a1")
+        with mock.patch("time.sleep"), self.flaky_reads({"p3_a1_sound_3.usg"}):
+            with self.assertRaises(core.LibrarianError) as ctx:
+                core.write_slots(self.drive, self.lib, [{"bank": "patches/a1", "slot": 3, "presetId": p["id"]}])
+        self.assertIn("Nothing on the synth was changed", str(ctx.exception))
+        self.assertEqual(self.bank_files("a1"), before)
+        self.assertEqual(core.list_backups(self.lib), [])
+
+    def test_write_tolerates_unreadable_untouched_file(self):
+        p, _ = self.lib.add(b"new", "new.usg")
+        with mock.patch("time.sleep"), self.flaky_reads({"p7_a1_sound_7.usg"}):
+            res = core.write_slots(self.drive, self.lib, [{"bank": "patches/a1", "slot": 3, "presetId": p["id"]}])
+        self.assertIn("p3_new.usg", self.bank_files("a1"))
+        self.assertIn("p7_a1_sound_7.usg", self.bank_files("a1"))
+        self.assertEqual(core.list_backups(self.lib)[0]["unreadable"], ["patches/a1/p7_a1_sound_7.usg"])
+
+    def test_write_backs_up_only_changed_banks(self):
+        p, _ = self.lib.add(b"new", "new.usg")
+        res = core.write_slots(self.drive, self.lib, [{"bank": "patches/b2", "slot": 1, "presetId": p["id"]}])
+        backed = os.listdir(os.path.join(self.lib.backup_dir, res["backup"], "patches"))
+        self.assertEqual(backed, ["b2"])
+
+    def test_write_same_name_overwrites_in_place(self):
+        p, _ = self.lib.add(b"new", "a1 sound 1.usg")
+        core.write_slots(self.drive, self.lib, [{"bank": "patches/a1", "slot": 1, "presetId": p["id"]}])
+        self.assertEqual(len(self.bank_files("a1")), 8)
+        with open(os.path.join(self.drive, "patches", "a1", "p1_a1_sound_1.usg"), "rb") as f:
+            self.assertEqual(f.read(), b"new")
+
+    def test_read_only_drive_gives_clear_message(self):
+        p, _ = self.lib.add(b"new", "new.usg")
+        with mock.patch("os.access", return_value=False):
+            with self.assertRaises(core.LibrarianError) as ctx:
+                core.write_slots(self.drive, self.lib, [{"bank": "patches/a1", "slot": 1, "presetId": p["id"]}])
+        self.assertIn("hold PATCH", str(ctx.exception))
+
+    def test_import_skips_unreadable_files(self):
+        with mock.patch("time.sleep"), self.flaky_reads({"p2_c1_sound_2.usg"}):
+            res = core.import_from_drive(self.drive, self.lib)
+        self.assertEqual(res["added"], 127)
+        self.assertEqual(res["failed"], ["patches/c1/p2_c1_sound_2.usg"])
 
     def test_restore_backup(self):
         b = core.backup_drive(self.drive, self.lib)

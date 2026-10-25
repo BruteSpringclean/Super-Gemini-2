@@ -15,6 +15,7 @@ The library side keeps every preset you have ever imported in one folder,
 deduplicated by content, with names, tags and notes in library.json.
 """
 
+import errno
 import hashlib
 import json
 import os
@@ -38,6 +39,8 @@ SLOT_FILE_RE = re.compile(r"^p([1-8])(?:[_\- ](.*))?(\.usg)$", re.IGNORECASE)
 SKIP_DIRS = {".trashes", ".spotlight-v100", ".fseventsd", ".temporaryitems", "system volume information"}
 JUNK_FILES = {".ds_store"}
 MAX_SCAN_DEPTH = 4
+IO_RETRIES = 4
+IO_CHUNK = 32 * 1024
 
 
 def default_home():
@@ -85,6 +88,72 @@ def is_preset_filename(filename):
 
 class LibrarianError(Exception):
     pass
+
+
+# ---------------------------------------------------------------- drive I/O
+#
+# The synth's USB drive is a small device that does not cope with the fast
+# whole-file copy macOS offers (shutil uses fcopyfile there, which failed with
+# "Input/output error" on a real Super Gemini). Everything that touches the
+# drive therefore uses plain, small reads and writes, retried on I/O errors.
+
+DRIVE_TIPS = (
+    "Nothing on the synth was changed. Try: unplug and reconnect the USB cable "
+    "(directly to the Mac, not through a hub), and make sure the synth was switched "
+    "on while holding PATCH. Then click Rescan and try again."
+)
+
+
+def _retry(action, path):
+    for attempt in range(IO_RETRIES):
+        try:
+            return action()
+        except OSError as e:
+            if e.errno not in (errno.EIO, errno.EAGAIN, errno.EBUSY) or attempt == IO_RETRIES - 1:
+                raise
+            time.sleep(0.25 * (attempt + 1))
+
+
+def read_file(path):
+    def action():
+        chunks = []
+        with open(path, "rb", buffering=0) as f:
+            while True:
+                chunk = f.read(IO_CHUNK)
+                if not chunk:
+                    break
+                chunks.append(chunk)
+        return b"".join(chunks)
+    return _retry(action, path)
+
+
+def write_file(path, data):
+    def action():
+        with open(path, "wb", buffering=0) as f:
+            for i in range(0, len(data), IO_CHUNK):
+                f.write(data[i:i + IO_CHUNK])
+            os.fsync(f.fileno())
+    _retry(action, path)
+    # read back to make sure the synth's drive really holds what we wrote
+    if read_file(path) != data:
+        raise LibrarianError("Verifying %s on the synth failed. %s" % (os.path.basename(path), DRIVE_TIPS))
+
+
+def copy_file(src, dst):
+    write_file(dst, read_file(src))
+
+
+def io_error(e, action, path):
+    reason = e.strerror or str(e)
+    return LibrarianError("Couldn't %s %s (%s). %s" % (action, os.path.basename(path), reason.lower(), DRIVE_TIPS))
+
+
+def check_writable(root):
+    if not os.access(root, os.W_OK):
+        raise LibrarianError(
+            "The synth's drive is read-only, so presets can't be written. Switch the Super Gemini "
+            "off, hold PATCH while switching it on, release once the LEDs settle, then try again."
+        )
 
 
 # ---------------------------------------------------------------- library
@@ -303,7 +372,7 @@ def describe_device(root, library):
                 if slot["file"]:
                     path = os.path.join(root, bank["path"], slot["file"])
                     try:
-                        with open(path, "rb") as f:
+                        with open(path, "rb", buffering=0) as f:
                             pid = content_id(f.read())
                     except OSError:
                         pid = None
@@ -340,36 +409,56 @@ def clean_junk(root):
     return removed
 
 
-def backup_drive(root, library, label="backup"):
-    """Copy every bank folder from the drive into the library's backups."""
+def backup_drive(root, library, label="backup", banks=None, required=()):
+    """Copy bank folders from the drive into the library's backups.
+
+    banks limits the backup to those bank paths (default: the whole drive).
+    Files listed in required (full paths) must be readable or the backup
+    fails; any other unreadable file is skipped and reported.
+    """
     sections = scan_drive(root)
+    required = set(required)
     stamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     dest = os.path.join(library.backup_dir, "%s_%s" % (stamp, safe_file_stem(label)))
     suffix = 1
     while os.path.exists(dest):
         suffix += 1
         dest = os.path.join(library.backup_dir, "%s_%s_%d" % (stamp, safe_file_stem(label), suffix))
-    count = 0
+    jobs = []
     for section in sections:
         for bank in section["banks"]:
-            src_dir = os.path.join(root, bank["path"])
-            dst_dir = os.path.join(dest, bank["path"])
-            os.makedirs(dst_dir, exist_ok=True)
+            if banks is not None and bank["path"] not in banks:
+                continue
+            os.makedirs(os.path.join(dest, bank["path"]), exist_ok=True)
             for slot in bank["slots"]:
                 for f in slot["files"]:
-                    shutil.copy2(os.path.join(src_dir, f), os.path.join(dst_dir, f))
-                    count += 1
-    # also keep loose top-level preset files such as init_patch.usg
-    for f in os.listdir(root):
-        p = os.path.join(root, f)
-        if os.path.isfile(p) and not is_junk(f) and f.lower().endswith(DEFAULT_EXTENSION):
-            os.makedirs(dest, exist_ok=True)
-            shutil.copy2(p, os.path.join(dest, f))
-            count += 1
+                    jobs.append(os.path.join(bank["path"], f))
+    if banks is None:
+        # also keep loose top-level preset files such as init_patch.usg
+        for f in os.listdir(root):
+            if os.path.isfile(os.path.join(root, f)) and not is_junk(f) and is_preset_filename(f):
+                jobs.append(f)
+
     os.makedirs(dest, exist_ok=True)
+    count = 0
+    unreadable = []
+    for rel in jobs:
+        src = os.path.join(root, rel)
+        try:
+            data = read_file(src)
+        except OSError as e:
+            if src in required:
+                shutil.rmtree(dest, ignore_errors=True)
+                raise io_error(e, "back up", src)
+            unreadable.append(rel)
+            continue
+        with open(os.path.join(dest, rel), "wb") as f:
+            f.write(data)
+        count += 1
     with open(os.path.join(dest, "backup.json"), "w", encoding="utf-8") as f:
-        json.dump({"created": now_iso(), "label": label, "drive": root, "files": count}, f, indent=2)
-    return {"name": os.path.basename(dest), "files": count}
+        json.dump({"created": now_iso(), "label": label, "drive": root, "files": count,
+                   "unreadable": unreadable}, f, indent=2)
+    return {"name": os.path.basename(dest), "files": count, "unreadable": unreadable}
 
 
 def list_backups(library):
@@ -390,10 +479,11 @@ def write_slots(root, library, changes):
 
     Each change is {"bank": "<bank folder path>", "slot": 1..8,
     "presetId": "<library id>" or None to empty the slot}.
-    A full backup of the drive is taken before anything is touched.
+    The banks being changed are backed up before anything is touched.
     """
     if not changes:
         raise LibrarianError("Nothing to write")
+    check_writable(root)
     plan = []
     known_banks = {b["path"] for s in scan_drive(root) for b in s["banks"]}
     for ch in changes:
@@ -406,20 +496,46 @@ def write_slots(root, library, changes):
         preset = library.get(ch["presetId"]) if ch.get("presetId") else None
         if preset and preset.get("ext", DEFAULT_EXTENSION) != DEFAULT_EXTENSION:
             raise LibrarianError("%s is not a .usg preset and cannot be sent to the synth" % preset["name"])
-        plan.append((safe_join(root, bank), slot, preset))
+        plan.append((bank, safe_join(root, bank), slot, preset))
 
-    backup = backup_drive(root, library, label="before_write")
-    for bank_dir, slot, preset in plan:
-        for f in os.listdir(bank_dir):
-            m = SLOT_FILE_RE.match(f)
-            if m and not is_junk(f) and int(m.group(1)) == slot:
-                os.remove(os.path.join(bank_dir, f))
-        if preset:
-            target = os.path.join(bank_dir, slot_filename(slot, preset["name"]))
-            shutil.copyfile(library.preset_path(preset), target)
-    clean_junk(root)
-    sync_disk()
-    return {"written": len(plan), "backup": backup["name"]}
+    # Every file we are about to replace or delete must be in the backup.
+    replaced = [os.path.join(bank_dir, f) for _, bank_dir, slot, _ in plan for f in slot_files(bank_dir, slot)]
+    backup = backup_drive(root, library, label="before_write",
+                          banks={p[0] for p in plan}, required=replaced)
+    written = 0
+    try:
+        for _, bank_dir, slot, preset in plan:
+            old = slot_files(bank_dir, slot)
+            keep = None
+            if preset:
+                # write the new file first, so a failure never leaves the slot empty
+                keep = slot_filename(slot, preset["name"])
+                target = os.path.join(bank_dir, keep)
+                try:
+                    write_file(target, library.read_bytes(preset["id"]))
+                except OSError as e:
+                    raise io_error(e, "write", target)
+            for f in old:
+                if f != keep:
+                    try:
+                        _retry(lambda: os.remove(os.path.join(bank_dir, f)), f)
+                    except OSError as e:
+                        raise io_error(e, "remove the old file", os.path.join(bank_dir, f))
+            written += 1
+    except LibrarianError as e:
+        if written:
+            raise LibrarianError("%s (%d of %d slots were already written; the backup %s has the old presets.)"
+                                 % (str(e).replace(DRIVE_TIPS, "").strip(), written, len(plan), backup["name"]))
+        raise
+    finally:
+        clean_junk(root)
+        sync_disk()
+    return {"written": written, "backup": backup["name"]}
+
+
+def slot_files(bank_dir, slot):
+    return [f for f in os.listdir(bank_dir)
+            if not is_junk(f) and SLOT_FILE_RE.match(f) and int(SLOT_FILE_RE.match(f).group(1)) == slot]
 
 
 def restore_backup(root, library, backup_name):
@@ -427,19 +543,28 @@ def restore_backup(root, library, backup_name):
     src = safe_join(library.backup_dir, backup_name)
     if not os.path.isfile(os.path.join(src, "backup.json")):
         raise LibrarianError("No such backup: %s" % backup_name)
-    safety = backup_drive(root, library, label="before_restore")
+    check_writable(root)
+    banks = [b for s in scan_drive(src) for b in s["banks"]]
+    bank_paths = {b["path"] for b in banks}
+    on_drive = [os.path.join(root, b["path"], f)
+                for s in scan_drive(root) for b in s["banks"] if b["path"] in bank_paths
+                for sl in b["slots"] for f in sl["files"]]
+    safety = backup_drive(root, library, label="before_restore", banks=bank_paths, required=on_drive)
     restored = 0
-    for section in scan_drive(src):
-        for bank in section["banks"]:
-            dst_dir = safe_join(root, bank["path"])
-            os.makedirs(dst_dir, exist_ok=True)
-            for f in os.listdir(dst_dir):
-                if SLOT_FILE_RE.match(f) and not is_junk(f):
+    for bank in banks:
+        dst_dir = safe_join(root, bank["path"])
+        os.makedirs(dst_dir, exist_ok=True)
+        for sl in bank["slots"]:
+            keep = set(sl["files"])
+            for f in sl["files"]:
+                try:
+                    copy_file(os.path.join(src, bank["path"], f), os.path.join(dst_dir, f))
+                except OSError as e:
+                    raise io_error(e, "restore", f)
+                restored += 1
+            for f in slot_files(dst_dir, sl["slot"]):
+                if f not in keep:
                     os.remove(os.path.join(dst_dir, f))
-            for slot in bank["slots"]:
-                for f in slot["files"]:
-                    shutil.copyfile(os.path.join(src, bank["path"], f), os.path.join(dst_dir, f))
-                    restored += 1
     clean_junk(root)
     sync_disk()
     return {"restored": restored, "backup": safety["name"]}
@@ -449,6 +574,7 @@ def import_from_drive(root, library, bank=None, slot=None):
     """Copy presets from the drive into the library (all, one bank or one slot)."""
     added = 0
     seen = 0
+    failed = []
     for section in scan_drive(root):
         for b in section["banks"]:
             if bank and b["path"] != bank:
@@ -457,8 +583,13 @@ def import_from_drive(root, library, bank=None, slot=None):
                 if slot and s["slot"] != int(slot):
                     continue
                 for f in s["files"]:
-                    with open(os.path.join(root, b["path"], f), "rb") as fh:
-                        data = fh.read()
+                    try:
+                        data = read_file(os.path.join(root, b["path"], f))
+                    except OSError as e:
+                        if slot:
+                            raise io_error(e, "read", f)
+                        failed.append("%s/%s" % (b["path"], f))
+                        continue
                     tags = ["from " + b["name"]] if bank or slot else []
                     _, created = library.add(
                         data, f, kind=section["kind"], tags=tags,
@@ -466,7 +597,7 @@ def import_from_drive(root, library, bank=None, slot=None):
                     )
                     seen += 1
                     added += 1 if created else 0
-    return {"added": added, "seen": seen}
+    return {"added": added, "seen": seen, "failed": failed}
 
 
 def sync_disk():

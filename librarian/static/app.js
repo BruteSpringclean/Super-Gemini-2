@@ -554,13 +554,15 @@ function setupEvents() {
 
   $("btnImportAll").onclick = () => run(async () => {
     const res = await api("POST", "device/import", {});
-    toast(`Imported ${res.added} new preset(s) from ${res.seen} slot(s)`);
+    const failed = res.failed.length ? ` ${res.failed.length} file(s) couldn't be read from the synth: ${res.failed.join(", ")}` : "";
+    toast(`Imported ${res.added} new preset(s) from ${res.seen} slot(s).${failed}`, !!failed, failed ? 15000 : 5000);
     await refresh(true);
   });
 
   $("btnBackup").onclick = () => run(async () => {
     const res = await api("POST", "device/backup");
-    toast(`Backed up ${res.files} file(s) as ${res.name}`);
+    const bad = res.unreadable.length ? ` ${res.unreadable.length} file(s) couldn't be read: ${res.unreadable.join(", ")}` : "";
+    toast(`Backed up ${res.files} file(s) as ${res.name}.${bad}`, !!bad, bad ? 15000 : 5000);
     await refresh(true);
   });
 
