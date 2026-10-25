@@ -145,7 +145,7 @@ class LibrarianTest(unittest.TestCase):
 
         def fake_open(path, mode="r", *args, **kwargs):
             name = os.path.basename(str(path))
-            if "r" in mode and name in bad_names and str(path).startswith(self.drive):
+            if "r" in mode and name in bad_names and os.path.realpath(str(path)).startswith(os.path.realpath(self.drive)):
                 counts[name] = counts.get(name, 0) + 1
                 if counts[name] <= fail_times:
                     raise OSError(errno.EIO, "Input/output error", str(path))

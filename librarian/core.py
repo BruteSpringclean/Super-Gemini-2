@@ -479,7 +479,8 @@ def backup_drive(root, library, label="backup", banks=None, required=()):
     fails; any other unreadable file is skipped and reported.
     """
     sections = scan_drive(root)
-    required = set(required)
+    # compare resolved paths: the drive path may go through a symlink
+    required = {os.path.realpath(p) for p in required}
     stamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     dest = os.path.join(library.backup_dir, "%s_%s" % (stamp, safe_file_stem(label)))
     suffix = 1
@@ -509,7 +510,7 @@ def backup_drive(root, library, label="backup", banks=None, required=()):
         try:
             data = read_file(src)
         except OSError as e:
-            if src in required:
+            if os.path.realpath(src) in required:
                 shutil.rmtree(dest, ignore_errors=True)
                 raise LibrarianError("%s %s" % (io_error(e, "back up", src), NOTHING_CHANGED))
             unreadable.append(rel)
