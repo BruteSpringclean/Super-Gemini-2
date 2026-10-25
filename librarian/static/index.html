@@ -34,7 +34,7 @@
     </div>
     <div class="tag-filter" id="tagFilter"></div>
     <div class="dropzone" id="libDrop">
-      Drag patches (<b>.usg</b>) or performances (<b>.xsg</b>) here from Finder, or drag a slot from the synth to save it.
+      Drag patches (<b>.usg</b>) or performances (<b>.xsg</b>) here from <span class="file-manager">Finder</span>, or drag a slot from the synth to save it.
       <label class="link">or choose files…<input type="file" id="fileInput" accept=".usg,.xsg" multiple hidden></label>
     </div>
     <ul class="preset-list" id="presetList"></ul>
@@ -50,7 +50,7 @@
       <ol>
         <li>Switch the Super Gemini <b>off</b>.</li>
         <li>Hold the <b>PATCH</b> button and switch it on. Release once the LEDs settle.</li>
-        <li>Connect USB to your Mac. A disk called <b>GEMINI</b> (or <b>SUPER8</b>) appears.</li>
+        <li>Connect USB to your computer. A disk called <b>GEMINI</b> (or <b>SUPER8</b>) appears.</li>
         <li>This page finds it automatically.</li>
       </ol>
     </div>
@@ -74,8 +74,8 @@
     <label>Synth drive location
       <input id="drivePath" placeholder="/Volumes/GEMINI">
     </label>
-    <p class="hint">Leave empty to look for <code>/Volumes/GEMINI</code> and <code>/Volumes/SUPER8</code>.</p>
-    <p class="hint">Library folder: <code id="homePath"></code> <a href="#" id="revealHome">Show in Finder</a></p>
+    <p class="hint">Leave empty to find the drive named <code>GEMINI</code> or <code>SUPER8</code> automatically.</p>
+    <p class="hint">Library folder: <code id="homePath"></code> <a href="#" id="revealHome">Show in <span class="file-manager">Finder</span></a></p>
     <p class="hint" id="browserHint" hidden>If dragging files into this window doesn't work, <a href="#" id="openBrowser">open the librarian in your web browser</a> instead. It keeps running while this window is open.</p>
     <h3>Automatic backup before sending</h3>
     <p class="hint">Copies only the banks you are changing to your Mac first. Turn it off to save time if you keep your own copies.</p>

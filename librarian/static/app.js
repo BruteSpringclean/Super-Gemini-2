@@ -126,6 +126,7 @@ function filteredLibrary() {
 // ------------------------------------------------------------------ render
 
 function render(force = true) {
+  applyPlatformWording();
   renderStatus();
   renderTags();
   renderLibrary();
@@ -133,6 +134,12 @@ function render(force = true) {
   renderPending();
   // background polls must not wipe out what you are typing in the details panel
   if (force || !$("details").contains(document.activeElement)) renderDetails();
+}
+
+function applyPlatformWording() {
+  if (state.settings.platform !== "win32") return;
+  document.querySelectorAll(".file-manager").forEach((el) => (el.textContent = "File Explorer"));
+  $("drivePath").placeholder = "E:\\";
 }
 
 function renderStatus() {

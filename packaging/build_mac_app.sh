@@ -11,7 +11,7 @@ NAME="Super Gemini Librarian"
 rm -rf build dist
 "$PY" -m venv build/venv
 build/venv/bin/pip install --quiet --upgrade pip
-build/venv/bin/pip install --quiet -r packaging/requirements-mac.txt
+build/venv/bin/pip install --quiet -r packaging/requirements-app.txt
 
 APP_VERSION="$VERSION" build/venv/bin/pyinstaller --noconfirm --clean \
   --distpath dist --workpath build/pyinstaller packaging/SuperGeminiLibrarian.spec
@@ -23,6 +23,6 @@ cp -R "dist/$NAME.app" "$staging/"
 ln -s /Applications "$staging/Applications"
 cp "packaging/Read Me First.txt" "$staging/"
 hdiutil create -volname "$NAME" -srcfolder "$staging" -ov -format UDZO \
-  "dist/Super-Gemini-Librarian-$VERSION.dmg"
+  "dist/Super-Gemini-Librarian-$VERSION-Mac.dmg"
 
-echo "Built dist/$NAME.app and dist/Super-Gemini-Librarian-$VERSION.dmg"
+echo "Built dist/$NAME.app and dist/Super-Gemini-Librarian-$VERSION-Mac.dmg"

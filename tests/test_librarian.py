@@ -87,6 +87,13 @@ class LibrarianTest(unittest.TestCase):
         self.assertIn("p3_notes.txt", self.bank_files("a1"))
         self.assertTrue(os.path.exists(os.path.join(self.drive, "gxos_v1.00.bin")))
 
+    def test_safe_join_accepts_drive_root(self):
+        # a drive root such as "E:\\" (or "/") already ends with a separator
+        root = os.path.abspath(os.sep)
+        self.assertEqual(core.safe_join(root, "patch_banks_a/a1"), os.path.join(root, "patch_banks_a", "a1"))
+        with self.assertRaises(core.LibrarianError):
+            core.safe_join(self.drive, "../outside")
+
     def test_update_tags_and_notes(self):
         p, _ = self.lib.add(b"abc", "bass.usg")
         self.lib.update(p["id"], {"tags": ["Bass", " ", "mono", "Bass"], "notes": "hi", "favorite": True})

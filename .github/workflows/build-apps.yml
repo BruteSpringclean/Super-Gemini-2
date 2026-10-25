@@ -1,0 +1,94 @@
+name: Build apps
+
+on:
+  push:
+    branches: ["main", "claude/**"]
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  mac:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      # python.org's installer is "universal2", so the app runs on both
+      # Apple Silicon and Intel Macs.
+      - name: Install Python 3.12 (universal2)
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/python.pkg" https://www.python.org/ftp/python/3.12.7/python-3.12.7-macos11.pkg
+          sudo installer -pkg "$RUNNER_TEMP/python.pkg" -target /
+          echo "PYTHON=/Library/Frameworks/Python.framework/Versions/3.12/bin/python3" >> "$GITHUB_ENV"
+
+      - name: Run tests
+        run: '"$PYTHON" -m unittest -v'
+
+      - name: Build app and disk image
+        env:
+          TARGET_ARCH: universal2
+        run: packaging/build_mac_app.sh
+
+      - name: Smoke test the built app
+        run: packaging/smoke_test.sh
+
+      - name: Show app log on failure
+        if: failure()
+        run: cat "$HOME/Library/Logs/Super Gemini Librarian.log" || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac
+          path: dist/*.dmg
+          if-no-files-found: error
+
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run tests
+        run: python -m unittest -v
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Build app, portable zip and installer
+        run: powershell -ExecutionPolicy Bypass -File packaging\build_windows_app.ps1
+
+      - name: Smoke test the built app
+        run: powershell -ExecutionPolicy Bypass -File packaging\smoke_test_windows.ps1
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: |
+            dist/*.exe
+            dist/*.zip
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [mac, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Super Gemini Librarian ${{ github.ref_name }}
+          body_path: packaging/release-notes.md
+          files: dist/*

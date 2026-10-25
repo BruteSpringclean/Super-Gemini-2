@@ -67,6 +67,7 @@ class App:
                 "home": self.library.home,
                 "driveOverride": self.drive_override,
                 "desktop": self.desktop,
+                "platform": sys.platform,
             },
         }
 
@@ -233,6 +234,8 @@ def make_handler(app):
                 if sys.platform == "darwin":
                     import subprocess
                     subprocess.Popen(["open", lib.home])
+                elif sys.platform == "win32":
+                    os.startfile(lib.home)
                 return {"ok": True}
 
             raise core.LibrarianError("Unknown request %s /api/%s" % (method, "/".join(parts)))

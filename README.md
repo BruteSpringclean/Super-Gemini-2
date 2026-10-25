@@ -1,6 +1,8 @@
 # Super Gemini Librarian
 
-A simple preset librarian for the **UDO Super Gemini** (and Super 8), for macOS.
+A simple preset librarian for the **UDO Super Gemini** (and Super 8), for Mac and Windows.
+
+**[⬇ Download the latest version](../../releases/latest)**: `.dmg` for Mac, `Setup.exe` for Windows.
 
 - Keep all your patches (`.usg`) and performances (`.xsg`) in one library on your Mac.
 - Tag them (pad, bass, lead…), click ☆ to favourite, add notes, and search.
@@ -30,9 +32,10 @@ While you drag, slots of the wrong type won't accept the drop.
 
 ## Getting started
 
-### The Mac app (recommended, and what to share)
+### Mac
 
-1. Download **`Super-Gemini-Librarian-<version>.dmg`** and open it.
+1. Download **`Super-Gemini-Librarian-<version>-Mac.dmg`** from the
+   [latest release](../../releases/latest) and open it.
 2. Drag **Super Gemini Librarian** onto the **Applications** shortcut.
 3. Open it from Applications or Launchpad. It runs in its own window and needs nothing else
    installed. It works on Apple Silicon and Intel Macs running macOS 11 or later.
@@ -44,6 +47,18 @@ right-click the app and choose **Open** instead. If macOS asks whether the app m
 removable volume, click **Allow**, because that's how it reaches the synth.
 
 The disk image also contains a **Read Me First** file with these steps.
+
+### Windows
+
+1. Download **`Super-Gemini-Librarian-<version>-Windows-Setup.exe`** from the
+   [latest release](../../releases/latest) and run it. It works on Windows 10 and 11 (64-bit).
+   - If Windows shows **"Windows protected your PC"**, click **More info → Run anyway**. This
+     happens because the installer isn't signed.
+2. Start **Super Gemini Librarian** from the Start menu.
+
+If you'd rather not install anything, the `…-Windows-Portable.zip` works too. Unzip it and run
+`Super Gemini Librarian.exe`. On Windows the synth shows up as a drive letter (e.g. `E:`) named
+**GEMINI**, and the librarian finds it by that name.
 
 ### Running from the source code
 
@@ -111,11 +126,17 @@ python3 -m unittest                                              # run the tests
 
 `SGL_HOME` overrides the library location.
 
-### Building the Mac app
+### Building the apps
 
-GitHub Actions builds the app on every push (`.github/workflows/build-mac-app.yml`). The `.dmg`
-appears under the run's **Artifacts**. Pushing a tag such as `v1.0.0` also publishes it on a
-**Release**. To build it yourself on a Mac:
+GitHub Actions builds, tests and smoke-tests the Mac and Windows apps on every push
+(`.github/workflows/build-apps.yml`). The files appear under the run's **Artifacts**. Pushing a tag
+such as `v1.0.0` publishes them on a **Release**, with the text from `packaging/release-notes.md`.
+For a new version, bump `VERSION` and push a matching tag.
+
+On Windows: `powershell -ExecutionPolicy Bypass -File packaging\build_windows_app.ps1` (the
+installer step needs [Inno Setup 6](https://jrsoftware.org/isinfo.php)).
+
+To build the Mac app yourself on a Mac:
 
 ```
 packaging/build_mac_app.sh            # makes dist/Super Gemini Librarian.app and a .dmg

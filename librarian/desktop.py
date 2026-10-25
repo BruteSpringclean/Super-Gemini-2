@@ -18,7 +18,10 @@ else:
     from . import core, server
 
 APP_NAME = "Super Gemini Librarian"
-LOG_PATH = os.path.join(os.path.expanduser("~"), "Library", "Logs", APP_NAME + ".log")
+if sys.platform == "win32":
+    LOG_PATH = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), APP_NAME, APP_NAME + ".log")
+else:
+    LOG_PATH = os.path.join(os.path.expanduser("~"), "Library", "Logs", APP_NAME + ".log")
 
 
 def setup_logging():

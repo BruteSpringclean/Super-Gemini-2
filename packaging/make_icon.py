@@ -1,4 +1,4 @@
-"""Draws the app icon (AppIcon.png + AppIcon.icns). Run: python3 packaging/make_icon.py"""
+"""Draws the app icon (AppIcon.png, .icns for Mac, .ico for Windows). Run: python3 packaging/make_icon.py"""
 import os
 from PIL import Image, ImageDraw, ImageFilter
 
@@ -51,4 +51,5 @@ if __name__ == "__main__":
     icon.save(os.path.join(HERE, "AppIcon.png"))
     icon.save(os.path.join(HERE, "AppIcon.icns"),
               sizes=[(16, 16), (32, 32), (64, 64), (128, 128), (256, 256), (512, 512), (1024, 1024)])
-    print("wrote AppIcon.png and AppIcon.icns")
+    icon.save(os.path.join(HERE, "AppIcon.ico"), sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
+    print("wrote AppIcon.png, AppIcon.icns and AppIcon.ico")

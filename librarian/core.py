@@ -23,6 +23,7 @@ import errno
 import hashlib
 import json
 import os
+import posixpath
 import re
 import shutil
 import subprocess
@@ -46,7 +47,8 @@ PATCH_DIR_RE = re.compile(r"^patch_banks_([ab])$", re.IGNORECASE)
 # neither write nor delete anything else on the synth's drive.
 SLOT_FILE_RE = re.compile(r"^p([1-8])(?:[_\- ](.*))?(\.usg|\.xsg)$", re.IGNORECASE)
 TRASH_DIRS = {".trashes", ".trash"}
-SKIP_DIRS = {".trashes", ".spotlight-v100", ".fseventsd", ".temporaryitems", "system volume information"}
+SKIP_DIRS = {".trashes", ".spotlight-v100", ".fseventsd", ".temporaryitems", "system volume information",
+             "$recycle.bin"}
 JUNK_FILES = {".ds_store"}
 MAX_SCAN_DEPTH = 4
 IO_RETRIES = 4
@@ -330,15 +332,36 @@ class Library:
 
 def find_drive(configured=None):
     """Return the mounted Super Gemini drive, or None."""
-    candidates = []
-    if configured:
-        candidates.append(configured)
+    if configured and os.path.isdir(configured):
+        return configured
+    if sys.platform == "win32":
+        for root, label in windows_volumes():
+            if label.upper() in DRIVE_NAMES:
+                return root
+        return None
     for name in DRIVE_NAMES:
-        candidates.append(os.path.join("/Volumes", name))
-    for path in candidates:
-        if path and os.path.isdir(path):
+        path = os.path.join("/Volumes", name)
+        if os.path.isdir(path):
             return path
     return None
+
+
+def windows_volumes():
+    """Yield (root, label) for local and removable drives on Windows."""
+    import ctypes
+    import string
+    kernel32 = ctypes.windll.kernel32
+    kernel32.SetErrorMode(1)  # no "insert a disk" pop-ups for empty card readers
+    mask = kernel32.GetLogicalDrives()
+    for i, letter in enumerate(string.ascii_uppercase):
+        if i < 2 or not mask & (1 << i):
+            continue  # skip A: and B:
+        root = letter + ":\\"
+        if kernel32.GetDriveTypeW(root) not in (2, 3):  # removable or fixed, not network/CD
+            continue
+        label = ctypes.create_unicode_buffer(261)
+        if kernel32.GetVolumeInformationW(root, label, 261, None, None, None, None, 0):
+            yield root, label.value
 
 
 def bank_sort_key(name):
@@ -365,7 +388,9 @@ def scan_drive(root):
         )
         if rel == ".":
             continue
-        ext = KIND_EXT[section_kind(os.path.dirname(rel))]
+        # bank paths always use "/" so they look the same on macOS and Windows
+        rel = rel.replace(os.sep, "/")
+        ext = KIND_EXT[section_kind(posixpath.dirname(rel))]
         slot_files = [f for f in filenames
                       if not is_junk(f) and SLOT_FILE_RE.match(f) and f.lower().endswith(ext)]
         if BANK_DIR_RE.match(os.path.basename(dirpath)) or slot_files:
@@ -373,14 +398,14 @@ def scan_drive(root):
 
     sections = {}
     for rel, slot_files in banks:
-        parent = os.path.dirname(rel)
+        parent = posixpath.dirname(rel)
         slots = []
         for n in range(1, SLOTS_PER_BANK + 1):
             matches = [f for f in slot_files if int(SLOT_FILE_RE.match(f).group(1)) == n]
             slots.append({"slot": n, "files": matches})
         sections.setdefault(parent, []).append({
             "path": rel,
-            "name": os.path.basename(rel).upper(),
+            "name": posixpath.basename(rel).upper(),
             "slots": slots,
         })
 
@@ -426,7 +451,8 @@ def safe_join(root, rel):
     """Join rel onto root and refuse anything that escapes the drive."""
     root = os.path.realpath(root)
     path = os.path.realpath(os.path.join(root, rel))
-    if path != root and not path.startswith(root + os.sep):
+    prefix = root if root.endswith(os.sep) else root + os.sep  # a drive root like E:\ already ends in one
+    if path != root and not path.startswith(prefix):
         raise LibrarianError("Path %r is outside the drive" % rel)
     return path
 
@@ -707,13 +733,27 @@ def sync_disk():
 
 
 def eject_drive(root):
-    if sys.platform != "darwin":
-        raise LibrarianError("Eject is only available on macOS")
     clean_junk(root)
     empty_drive_trash(root)
     sync_disk()
-    proc = subprocess.run(["diskutil", "eject", root], capture_output=True, text=True)
-    if proc.returncode != 0:
-        raise LibrarianError(proc.stderr.strip() or proc.stdout.strip() or "Eject failed")
+    if sys.platform == "darwin":
+        proc = subprocess.run(["diskutil", "eject", root], capture_output=True, text=True)
+        if proc.returncode != 0:
+            raise LibrarianError(proc.stderr.strip() or proc.stdout.strip() or "Eject failed")
+    elif sys.platform == "win32":
+        drive = os.path.splitdrive(root)[0]  # e.g. "E:"
+        script = ("(New-Object -ComObject Shell.Application).Namespace(17)"
+                  ".ParseName('%s').InvokeVerb('Eject')" % drive)
+        subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+                       capture_output=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        for _ in range(10):
+            if not os.path.exists(root):
+                break
+            time.sleep(0.5)
+        else:
+            raise LibrarianError("Windows didn't eject the drive. Use \u201cSafely Remove Hardware\u201d "
+                                 "in the taskbar instead. Your changes are already saved on the synth.")
+    else:
+        raise LibrarianError("Eject is only available on macOS and Windows")
     time.sleep(0.5)
     return {"ejected": root}
