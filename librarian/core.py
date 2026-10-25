@@ -521,7 +521,7 @@ def backup_drive(root, library, label="backup", banks=None, required=()):
             os.makedirs(os.path.join(dest, bank["path"]), exist_ok=True)
             for slot in bank["slots"]:
                 for f in slot["files"]:
-                    jobs.append(os.path.join(bank["path"], f))
+                    jobs.append(posixpath.join(bank["path"], f))
     if banks is None:
         # also keep loose top-level preset files such as init_patch.usg
         for f in os.listdir(root):
