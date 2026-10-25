@@ -30,21 +30,26 @@ While you drag, slots of the wrong type won't accept the drop.
 
 ## Getting started
 
-1. Download this project (green **Code** button → **Download ZIP**) and unzip it.
-2. Double-click **`Super Gemini Librarian.command`**.
-   - The first time, macOS may say it is from an unidentified developer. Right-click the file,
-     choose **Open**, then confirm.
-   - If macOS asks to install the "command line developer tools", accept. That installs Python 3.
-3. Your browser opens the librarian.
+### The Mac app (recommended, and what to share)
 
-If you prefer a real app in your Applications folder, run this once in Terminal from the project
-folder:
+1. Download **`Super-Gemini-Librarian-<version>.dmg`** and open it.
+2. Drag **Super Gemini Librarian** onto the **Applications** shortcut.
+3. Open it from Applications or Launchpad. It runs in its own window and needs nothing else
+   installed. It works on Apple Silicon and Intel Macs running macOS 11 or later.
 
-```
-./build-mac-app.sh
-```
+**The first time you open it**, macOS says it "could not verify" the app, because the app isn't
+registered with Apple. Click **Done**, then go to **System Settings → Privacy & Security**, scroll
+down and click **Open Anyway** next to *Super Gemini Librarian*. On older macOS versions,
+right-click the app and choose **Open** instead. If macOS asks whether the app may access a
+removable volume, click **Allow**, because that's how it reaches the synth.
 
-That creates `~/Applications/Super Gemini Librarian.app`. Use the **Quit** button in the window to stop it.
+The disk image also contains a **Read Me First** file with these steps.
+
+### Running from the source code
+
+Double-click **`Super Gemini Librarian.command`** (the first time: right-click → **Open**). If macOS
+offers to install the "command line developer tools", accept, because that installs Python 3. The
+librarian then opens in your web browser.
 
 ## Connecting the synth
 
@@ -105,3 +110,17 @@ python3 -m unittest                                              # run the tests
 ```
 
 `SGL_HOME` overrides the library location.
+
+### Building the Mac app
+
+GitHub Actions builds the app on every push (`.github/workflows/build-mac-app.yml`). The `.dmg`
+appears under the run's **Artifacts**. Pushing a tag such as `v1.0.0` also publishes it on a
+**Release**. To build it yourself on a Mac:
+
+```
+packaging/build_mac_app.sh            # makes dist/Super Gemini Librarian.app and a .dmg
+TARGET_ARCH=universal2 PYTHON=/Library/Frameworks/Python.framework/Versions/3.12/bin/python3 \
+  packaging/build_mac_app.sh          # Apple Silicon + Intel (needs python.org's Python)
+```
+
+The version number lives in `VERSION`. The icon is drawn by `packaging/make_icon.py`.
