@@ -9,6 +9,7 @@
   --accent-2: #4cc2c4;
   --danger: #e5534b;
   --pending: #7c5cff;
+  --perf: #e86fb0;
   --radius: 8px;
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
   font-size: 14px;
@@ -77,15 +78,31 @@ main { flex: 1; display: flex; min-height: 0; gap: 1px; background: var(--line);
 }
 .preset:hover { background: var(--panel); }
 .preset.selected { background: var(--panel-2); border-color: var(--line); }
-.preset .fav { color: var(--accent); width: 14px; }
+.preset .fav {
+  background: none; border: none; padding: 0 2px; width: 22px; font-size: 16px; line-height: 1;
+  color: var(--muted); cursor: pointer; opacity: .55;
+}
+.preset .fav:hover { opacity: 1; color: var(--accent); }
+.preset .fav.on { color: var(--accent); opacity: 1; }
 .preset .body { flex: 1; min-width: 0; }
 .preset .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .preset .meta { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 2px; }
 .preset .meta .tag { font-size: 11px; padding: 0 6px; cursor: default; }
 .kind { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.kind.performance { color: var(--perf); }
+.kind-filter { display: inline-flex; margin-right: 6px; }
+.kind-filter button { font-size: 11px; padding: 1px 8px; border-radius: 0; }
+.kind-filter button:first-child { border-radius: 99px 0 0 99px; }
+.kind-filter button:last-child { border-radius: 0 99px 99px 0; }
+.kind-filter button.active { background: var(--accent-2); color: #062224; border-color: var(--accent-2); }
 .empty { color: var(--muted); padding: 20px; text-align: center; }
 
-.section-tabs { display: flex; gap: 4px; flex-wrap: wrap; }
+.section-tabs { display: flex; gap: 14px; flex-wrap: wrap; }
+.tab-group { display: inline-flex; gap: 4px; align-items: center; }
+.tab-group-label { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-right: 2px; }
+.tab-group.performance .tab-group-label { color: var(--perf); }
+.tab-group.performance button.active { background: var(--perf); border-color: var(--perf); color: #2a0618; }
+.banks.performance .bank-label { color: var(--perf); }
 .section-tabs button { font-size: 12px; padding: 4px 10px; }
 .section-tabs button.active { background: var(--accent-2); color: #062224; border-color: var(--accent-2); }
 
@@ -146,6 +163,8 @@ dialog::backdrop { background: rgba(0,0,0,.5); }
 dialog h2 { margin-top: 0; font-size: 16px; }
 dialog h3 { font-size: 13px; margin: 18px 0 4px; }
 .hint { color: var(--muted); font-size: 12px; }
+label.check { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
+label.check input { width: auto; }
 .backup-list { list-style: none; padding: 0; max-height: 220px; overflow-y: auto; margin: 0; }
 .backup-list li { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--line); font-size: 12px; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 16px; }

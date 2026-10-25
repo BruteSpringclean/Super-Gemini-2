@@ -34,8 +34,8 @@
     </div>
     <div class="tag-filter" id="tagFilter"></div>
     <div class="dropzone" id="libDrop">
-      Drag <b>.usg</b> files here from Finder, or drag a slot from the synth to save it.
-      <label class="link">or choose files…<input type="file" id="fileInput" accept=".usg" multiple hidden></label>
+      Drag patches (<b>.usg</b>) or performances (<b>.xsg</b>) here from Finder, or drag a slot from the synth to save it.
+      <label class="link">or choose files…<input type="file" id="fileInput" accept=".usg,.xsg" multiple hidden></label>
     </div>
     <ul class="preset-list" id="presetList"></ul>
   </section>
@@ -76,8 +76,12 @@
     </label>
     <p class="hint">Leave empty to look for <code>/Volumes/GEMINI</code> and <code>/Volumes/SUPER8</code>.</p>
     <p class="hint">Library folder: <code id="homePath"></code> <a href="#" id="revealHome">Show in Finder</a></p>
+    <h3>Automatic backup before sending</h3>
+    <p class="hint">Copies only the banks you are changing to your Mac first. Turn it off to save time if you keep your own copies.</p>
+    <label class="check"><input type="checkbox" id="backupPatch"> Patch banks</label>
+    <label class="check"><input type="checkbox" id="backupPerformance"> Performance banks</label>
     <h3>Synth backups</h3>
-    <p class="hint">A backup is taken automatically before every write. Restoring also backs up the current state first.</p>
+    <p class="hint">Restoring a backup also backs up the current state of those banks first.</p>
     <ul class="backup-list" id="backupList"></ul>
     <div class="dialog-actions">
       <button value="cancel">Close</button>

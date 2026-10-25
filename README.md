@@ -2,11 +2,11 @@
 
 A simple preset librarian for the **UDO Super Gemini** (and Super 8), for macOS.
 
-- Keep all your presets in one library on your Mac.
-- Tag them (pad, bass, lead…), mark favourites, add notes, and search.
+- Keep all your patches (`.usg`) and performances (`.xsg`) in one library on your Mac.
+- Tag them (pad, bass, lead…), click ☆ to favourite, add notes, and search.
 - Drag and drop presets onto any bank and slot of the synth, then send them in one go.
 - Save presets from the synth back into your library.
-- The app backs up the synth automatically before every write, and you can restore any backup.
+- Optionally back up the banks you change before each send, and restore any backup.
 
 It needs nothing extra installed. It is plain Python 3, and the window opens in your web browser.
 
@@ -16,13 +16,17 @@ The Super Gemini does not load presets over MIDI SysEx. It stores each preset as
 on its built-in USB drive:
 
 ```
-GEMINI/<folder>/a1 … h2/p1_<name>.usg … p8_<name>.usg
+GEMINI/patch_banks_a/a1 … h2/p1_<name>.usg … p8_<name>.usg      patches, group A (B likewise)
+GEMINI/Performances_a/a1 … h2/p1_<name>.xsg … p8_<name>.xsg     performances, group A (B likewise)
 ```
 
 The bank folder (`a1`…`h2`) is the bank button (A–H) plus page 1 or 2. The `p1`…`p8` prefix
 is the slot number, and the rest of the file name is free text. The librarian reads and writes
-these files for you. It finds the bank folders by itself, so it keeps working if UDO
-renames the top-level folders in a firmware update.
+these files for you.
+
+Patches and performances are kept apart. Performances (`.xsg`) can only go into
+`Performances_a` and `Performances_b`, and patches (`.usg`) only into the patch banks.
+While you drag, slots of the wrong type won't accept the drop.
 
 ## Getting started
 
@@ -55,15 +59,18 @@ If your drive mounts under a different name, set its location in **⚙ Settings*
 
 | To… | Do this |
 | --- | --- |
-| Add presets to the library | Drag `.usg` files or whole folders (e.g. a downloaded patch pack) from Finder onto the library panel. A dropped folder's name becomes a tag. |
+| Add presets to the library | Drag `.usg` / `.xsg` files or whole folders (e.g. a downloaded patch pack) from Finder onto the library panel. A dropped folder's name becomes a tag. |
 | Save what's on the synth | **Import all from synth**, or drag a single slot onto the library panel. |
 | Tag, rename, add notes | Click a preset. Type a tag and press Enter. |
-| Filter | Click tags at the top of the library, or type in the search box. |
+| Favourite | Click the ☆ next to a preset (or **☆ Favourite** on a selected slot). Favourites sort to the top; click **★ favourites** to show only them. |
+| Filter | **All / Patches / Performances**, click tags, or type in the search box. |
+| Switch banks | Use the **Patches A/B** and **Performances A/B** tabs above the slots. |
 | Put a preset in a slot | Drag it from the library onto the slot. The slot turns purple ("staged"). |
 | Copy a slot | Drag one slot onto another. |
 | Fill a bank from Finder | Drop several files onto a slot. They fill that slot and the ones after it. |
 | Empty a slot | Click it and press Delete, or use **Clear slot**. |
-| Write to the synth | **Send to synth**. Nothing changes on the synth until you do this. |
+| Write to the synth | **Send to synth**. Nothing changes on the synth until you do this. For each slot, the old file is deleted first and then the new one is copied in, because the synth's drive is small. The drive's hidden Trash is emptied too. |
+| Choose what gets backed up | ⚙ Settings → **Automatic backup before sending**. By default patch banks are backed up and performance banks are not. Only the banks you change are copied. |
 | Undo | **Discard** before sending, or ⚙ Settings → **Restore to synth** afterwards. |
 
 When you are done, click **⏏ Eject**, then switch the Super Gemini off and on again so it
@@ -75,7 +82,8 @@ Everything lives in `~/Music/Super Gemini Librarian/`:
 
 - `presets/`: one file per unique preset (duplicates are detected automatically)
 - `library.json`: names, tags, notes and favourites
-- `backups/`: a full copy of the synth's banks taken before every write
+- `backups/`: copies of the banks you changed, taken before each send (if switched on), plus any
+  full backups from **Back up synth**
 
 ## Good to know
 
@@ -83,8 +91,10 @@ Everything lives in `~/Music/Super Gemini Librarian/`:
   The librarian deletes them from the drive after each write and on eject.
 - Patch files carry no name inside them (the synth has no screen). The name you see is the
   library name, and it becomes the file name when the preset is written to a slot.
-- Only `.usg` preset files are accepted. Other files (such as `.syx` dumps from other synths) are
-  skipped, and the librarian never writes or deletes anything on the synth except `p1_…`–`p8_….usg` files.
+- Only `.usg` patches and `.xsg` performances are accepted. Other files (such as `.syx` dumps from
+  other synths) are skipped. On the synth, the librarian only writes or deletes `p1_…`–`p8_…` files
+  of the right type for each folder, plus macOS clutter and the drive's Trash.
+- Before deleting anything, it checks that the new presets will fit on the drive.
 - The librarian only listens on your own Mac (`127.0.0.1`). Nothing is shared on the network.
 
 ## For developers

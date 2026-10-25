@@ -60,6 +60,7 @@ class App:
             "backups": core.list_backups(self.library),
             "settings": {
                 "drivePath": self.library.settings.get("drivePath", ""),
+                "backup": self.library.backup_settings(),
                 "home": self.library.home,
                 "driveOverride": self.drive_override,
             },
@@ -208,7 +209,12 @@ def make_handler(app):
 
             if parts == ["settings"] and method == "POST":
                 body = self.read_json()
-                lib.set_setting("drivePath", str(body.get("drivePath", "")).strip())
+                if "drivePath" in body:
+                    lib.set_setting("drivePath", str(body["drivePath"]).strip())
+                if isinstance(body.get("backup"), dict):
+                    backup = lib.backup_settings()
+                    backup.update({k: bool(v) for k, v in body["backup"].items() if k in core.KIND_EXT})
+                    lib.set_setting("backup", backup)
                 return {"ok": True}
 
             if parts == ["quit"] and method == "POST":

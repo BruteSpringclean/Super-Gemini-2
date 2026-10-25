@@ -205,6 +205,102 @@ class LibrarianTest(unittest.TestCase):
         self.assertEqual(res["added"], 127)
         self.assertEqual(res["failed"], ["patches/c1/p2_c1_sound_2.usg"])
 
+    def add_performances(self):
+        for group in "ab":
+            for bank in BANKS[:2]:
+                d = os.path.join(self.drive, "Performances_" + group, bank)
+                os.makedirs(d)
+                for slot in (1, 2):
+                    with open(os.path.join(d, "p%d_perf_%s%s_%d.xsg" % (slot, group, bank, slot)), "wb") as f:
+                        f.write(("perf-%s-%s-%d" % (group, bank, slot)).encode())
+
+    def test_performances_are_separate_sections(self):
+        self.add_performances()
+        sections = core.scan_drive(self.drive)
+        self.assertEqual([(s["name"], s["kind"]) for s in sections],
+                         [("patches", "patch"), ("Performances A", "performance"), ("Performances B", "performance")])
+        self.assertEqual(sections[1]["banks"][0]["slots"][0]["files"], ["p1_perf_aa1_1.xsg"])
+
+    def test_wrong_file_types_are_ignored_on_drive(self):
+        self.add_performances()
+        open(os.path.join(self.drive, "patches", "a1", "p1_stray.xsg"), "wb").close()
+        open(os.path.join(self.drive, "Performances_a", "a1", "p3_stray.usg"), "wb").close()
+        sections = core.scan_drive(self.drive)
+        self.assertEqual(sections[0]["banks"][0]["slots"][0]["files"], ["p1_a1_sound_1.usg"])
+        self.assertEqual(sections[1]["banks"][0]["slots"][2]["files"], [])
+
+    def test_performance_written_only_to_performance_folders(self):
+        self.add_performances()
+        perf, _ = self.lib.add(b"my perf", "Split Pad.xsg")
+        patch, _ = self.lib.add(b"my patch", "Lead.usg")
+        self.assertEqual(perf["kind"], "performance")
+        res = core.write_slots(self.drive, self.lib, [{"bank": "Performances_b/a1", "slot": 2, "presetId": perf["id"]}])
+        self.assertEqual(sorted(os.listdir(os.path.join(self.drive, "Performances_b", "a1"))),
+                         ["p1_perf_ba1_1.xsg", "p2_split_pad.xsg"])
+        self.assertIsNone(res["backup"])  # performance backups are off by default
+        with self.assertRaises(core.LibrarianError) as ctx:
+            core.write_slots(self.drive, self.lib, [{"bank": "patches/a1", "slot": 1, "presetId": perf["id"]}])
+        self.assertIn("Performances", str(ctx.exception))
+        with self.assertRaises(core.LibrarianError):
+            core.write_slots(self.drive, self.lib, [{"bank": "Performances_a/a1", "slot": 1, "presetId": patch["id"]}])
+        self.assertIn("p1_a1_sound_1.usg", self.bank_files("a1"))
+
+    def test_import_performances(self):
+        self.add_performances()
+        res = core.import_from_drive(self.drive, self.lib)
+        self.assertEqual(res["added"], 128 + 8)
+        kinds = sorted({p["kind"] for p in self.lib.list()})
+        self.assertEqual(kinds, ["patch", "performance"])
+
+    def test_backup_settings(self):
+        p, _ = self.lib.add(b"x", "x.usg")
+        self.assertEqual(self.lib.backup_settings(), {"patch": True, "performance": False})
+        self.lib.set_setting("backup", {"patch": False})
+        res = core.write_slots(self.drive, self.lib, [{"bank": "patches/a1", "slot": 1, "presetId": p["id"]}])
+        self.assertIsNone(res["backup"])
+        self.assertEqual(core.list_backups(self.lib), [])
+
+    def test_old_file_deleted_before_new_one_is_copied(self):
+        p, _ = self.lib.add(b"new", "new.usg")
+        seen = []
+        real_write = core.write_file
+
+        def spy(path, data):
+            seen.append(sorted(os.listdir(os.path.dirname(path))))
+            real_write(path, data)
+        with mock.patch.object(core, "write_file", spy):
+            core.write_slots(self.drive, self.lib, [{"bank": "patches/a1", "slot": 4, "presetId": p["id"]}])
+        self.assertNotIn("p4_a1_sound_4.usg", seen[0])
+        self.assertEqual(self.bank_files("a1")[3], "p4_new.usg")
+
+    def test_drive_trash_is_emptied(self):
+        trash = os.path.join(self.drive, ".Trashes", "501")
+        os.makedirs(trash)
+        with open(os.path.join(trash, "p1_old.usg"), "wb") as f:
+            f.write(b"x" * 5000)
+        p, _ = self.lib.add(b"new", "new.usg")
+        res = core.write_slots(self.drive, self.lib, [{"bank": "patches/a1", "slot": 1, "presetId": p["id"]}])
+        self.assertEqual(res["trashFreed"], 5000)
+        self.assertEqual(os.listdir(os.path.join(self.drive, ".Trashes")), [])
+
+    def test_full_drive_refused_before_anything_changes(self):
+        p, _ = self.lib.add(b"n" * 100000, "big.usg")
+        before = self.bank_files("a1")
+        usage = mock.Mock(free=1000)
+        with mock.patch("shutil.disk_usage", return_value=usage):
+            with self.assertRaises(core.LibrarianError) as ctx:
+                core.write_slots(self.drive, self.lib, [{"bank": "patches/a1", "slot": 1, "presetId": p["id"]}])
+        self.assertIn("full", str(ctx.exception))
+        self.assertEqual(self.bank_files("a1"), before)
+
+    def test_missing_library_file_changes_nothing(self):
+        p, _ = self.lib.add(b"new", "new.usg")
+        os.remove(self.lib.preset_path(p))
+        with self.assertRaises(core.LibrarianError) as ctx:
+            core.write_slots(self.drive, self.lib, [{"bank": "patches/a1", "slot": 1, "presetId": p["id"]}])
+        self.assertIn("Nothing on the synth was changed", str(ctx.exception))
+        self.assertIn("p1_a1_sound_1.usg", self.bank_files("a1"))
+
     def test_restore_backup(self):
         b = core.backup_drive(self.drive, self.lib)
         p, _ = self.lib.add(b"replacement", "r.usg")
@@ -217,9 +313,10 @@ class LibrarianTest(unittest.TestCase):
             core.restore_backup(self.drive, self.lib, "../../etc")
 
     def test_empty_bank_folders_are_found(self):
-        os.makedirs(os.path.join(self.drive, "performances", "a1"))
+        os.makedirs(os.path.join(self.drive, "Performances_a", "a1"))
         sections = core.scan_drive(self.drive)
-        perf = [s for s in sections if s["path"] == "performances"][0]
+        perf = [s for s in sections if s["path"] == "Performances_a"][0]
+        self.assertEqual(perf["name"], "Performances A")
         self.assertEqual(perf["kind"], "performance")
         self.assertEqual(perf["banks"][0]["slots"][0]["files"], [])
 
@@ -269,6 +366,16 @@ class ApiTest(unittest.TestCase):
         status, res = self.call("POST", "/api/library/upload", b"F0 7E F7", {"X-Filename": "dump.syx"})
         self.assertEqual(status, 400)
         self.assertIn(".usg", res["error"])
+
+    def test_backup_and_favourite_settings_api(self):
+        status, _ = self.call("POST", "/api/settings", {"backup": {"patch": False}})
+        self.assertEqual(status, 200)
+        _, st = self.call("GET", "/api/state")
+        self.assertEqual(st["settings"]["backup"], {"patch": False, "performance": False})
+        _, res = self.call("POST", "/api/library/upload", b"perf", {"X-Filename": "Duo.xsg"})
+        self.assertEqual(res["preset"]["kind"], "performance")
+        _, res = self.call("PATCH", "/api/library/" + res["preset"]["id"], {"favorite": True})
+        self.assertTrue(res["preset"]["favorite"])
 
     def test_cross_origin_writes_refused(self):
         status, _ = self.call("POST", "/api/device/backup", {}, {"Origin": "https://evil.example"})

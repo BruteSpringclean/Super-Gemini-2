@@ -2,6 +2,9 @@
 
 const PRESET_MIME = "application/x-sgl-preset";
 const SLOT_MIME = "application/x-sgl-slot";
+const KIND_MIME = "application/x-sgl-kind-"; // + "patch" | "performance", so dragover can check the type
+const KIND_EXT = { patch: ".usg", performance: ".xsg" };
+const KIND_NAME = { patch: "patch", performance: "performance" };
 
 let state = null;
 let lastStateJson = "";
@@ -10,6 +13,7 @@ let selected = null;      // {type: "preset", id} | {type: "slot", bank, slot}
 let activeSection = 0;
 const activeTags = new Set();
 let favoritesOnly = false;
+let kindFilter = "all"; // "all" | "patch" | "performance"
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -67,6 +71,23 @@ async function run(fn) {
 
 const presetById = (id) => state.library.find((p) => p.id === id);
 
+const kindOfFile = (name) => Object.keys(KIND_EXT).find((k) => name.toLowerCase().endsWith(KIND_EXT[k])) || null;
+
+function wrongKindMessage(name, kind) {
+  return kind === "performance"
+    ? `“${name}” is a performance (.xsg). Performances can only go into the Performances A/B folders.`
+    : `“${name}” is a patch (.usg). Patches can only go into the patch banks, not the Performances folders.`;
+}
+
+async function toggleFavorite(id) {
+  const p = presetById(id);
+  if (!p) return;
+  await run(async () => {
+    await api("PATCH", "library/" + id, { favorite: !p.favorite });
+    await refresh(true);
+  });
+}
+
 function findSlot(bank, slot) {
   for (const s of state.device.sections) {
     for (const b of s.banks) if (b.path === bank) return { section: s, bank: b, slot: b.slots[slot - 1] };
@@ -95,6 +116,7 @@ function filteredLibrary() {
   const q = $("search").value.trim().toLowerCase();
   return state.library.filter((p) => {
     if (favoritesOnly && !p.favorite) return false;
+    if (kindFilter !== "all" && p.kind !== kindFilter) return false;
     for (const t of activeTags) if (!p.tags.includes(t)) return false;
     if (!q) return true;
     return [p.name, p.notes, p.kind, ...p.tags].join(" ").toLowerCase().includes(q);
@@ -129,8 +151,10 @@ function renderStatus() {
 
 function renderTags() {
   const box = $("tagFilter");
-  const favCount = state.library.filter((p) => p.favorite).length;
-  let html = favCount ? `<span class="tag ${favoritesOnly ? "active" : ""}" data-fav="1">★ favourites</span>` : "";
+  const kinds = [["all", "All"], ["patch", "Patches"], ["performance", "Performances"]];
+  let html = `<span class="kind-filter">${kinds.map(([k, label]) =>
+    `<button class="${kindFilter === k ? "active" : ""}" data-kind="${k}">${label}</button>`).join("")}</span>`;
+  html += `<span class="tag ${favoritesOnly ? "active" : ""}" data-fav="1">★ favourites</span>`;
   for (const t of state.tags) {
     html += `<span class="tag ${activeTags.has(t) ? "active" : ""}" data-tag="${esc(t)}">${esc(t)}</span>`;
   }
@@ -151,11 +175,11 @@ function renderLibrary() {
     return;
   }
   ul.innerHTML = list.map((p) => `
-    <li class="preset ${selected?.type === "preset" && selected.id === p.id ? "selected" : ""}" draggable="true" data-id="${p.id}">
-      <span class="fav">${p.favorite ? "★" : ""}</span>
+    <li class="preset ${selected?.type === "preset" && selected.id === p.id ? "selected" : ""}" draggable="true" data-id="${p.id}" data-kind="${p.kind}">
+      <button class="fav ${p.favorite ? "on" : ""}" data-fav-id="${p.id}" title="${p.favorite ? "Remove from favourites" : "Add to favourites"}">${p.favorite ? "★" : "☆"}</button>
       <div class="body">
         <div class="name">${esc(p.name)}</div>
-        <div class="meta"><span class="kind">${esc(p.kind)}</span>${p.tags.map((t) => `<span class="tag">${esc(t)}</span>`).join("")}</div>
+        <div class="meta"><span class="kind ${p.kind}">${p.kind === "performance" ? "perf" : "patch"}</span>${p.tags.map((t) => `<span class="tag">${esc(t)}</span>`).join("")}</div>
       </div>
     </li>`).join("");
 }
@@ -169,9 +193,16 @@ function renderDevice() {
       Make sure you held PATCH while switching on, or set the drive location in ⚙ Settings.</p>`;
   }
   if (activeSection >= d.sections.length) activeSection = 0;
-  $("sectionTabs").innerHTML = d.sections.length > 1
-    ? d.sections.map((s, i) => `<button class="${i === activeSection ? "active" : ""}" data-section="${i}">${esc(s.name)}</button>`).join("")
-    : "";
+  // patches and performances get separate groups of tabs
+  let tabs = "";
+  for (const kind of ["patch", "performance"]) {
+    const group = d.sections.map((s, i) => [s, i]).filter(([s]) => s.kind === kind);
+    if (!group.length) continue;
+    tabs += `<span class="tab-group ${kind}"><span class="tab-group-label">${kind === "patch" ? "Patches" : "Performances"}</span>` +
+      group.map(([s, i]) => `<button class="${i === activeSection ? "active" : ""}" data-section="${i}" title="${esc(s.path)}">${esc(s.name.replace(/^(Patches|Performances) /, ""))}</button>`).join("") +
+      `</span>`;
+  }
+  $("sectionTabs").innerHTML = tabs;
   const section = d.sections[activeSection];
   if (!section) {
     $("banks").innerHTML = "";
@@ -184,13 +215,14 @@ function renderDevice() {
     if (lastRow !== null && row !== lastRow) html += `<div class="bank-group-gap"></div>`;
     lastRow = row;
     html += `<div class="bank"><div class="bank-label" title="${esc(b.path)}">${esc(b.name)}</div>`;
-    for (const s of b.slots) html += slotHtml(b, s);
+    for (const s of b.slots) html += slotHtml(b, s, section.kind);
     html += `</div>`;
   }
   $("banks").innerHTML = html;
+  $("banks").className = "banks " + section.kind;
 }
 
-function slotHtml(bank, s) {
+function slotHtml(bank, s, kind) {
   const pending = staged.get(key(bank.path, s.slot));
   let name = s.name;
   let classes = ["slot"];
@@ -207,7 +239,7 @@ function slotHtml(bank, s) {
   if (selected?.type === "slot" && selected.bank === bank.path && selected.slot === s.slot) classes.push("selected");
   const draggable = name ? "true" : "false";
   const title = pending ? "Staged change" : (s.file || "Empty slot");
-  return `<div class="${classes.join(" ")}" draggable="${draggable}" data-bank="${esc(bank.path)}" data-slot="${s.slot}" title="${esc(title)}">
+  return `<div class="${classes.join(" ")}" draggable="${draggable}" data-bank="${esc(bank.path)}" data-slot="${s.slot}" data-kind="${kind}" title="${esc(title)}">
     <span class="num">${esc(bank.name)}·${s.slot}</span><span class="badge"></span>
     <span class="sname">${name ? esc(name) : "empty"}</span></div>`;
 }
@@ -216,7 +248,10 @@ function renderPending() {
   const n = staged.size;
   $("pendingBar").hidden = n === 0;
   if (n) {
-    $("pendingText").innerHTML = `<b>${n}</b> slot${n === 1 ? "" : "s"} staged. Nothing changes on the synth until you send.`;
+    const kinds = new Set([...staged.values()].map((ch) => findSlot(ch.bank, ch.slot)?.section.kind));
+    const backedUp = [...kinds].filter((k) => state.settings.backup[k]);
+    const note = backedUp.length ? ` Changed ${backedUp.map((k) => k === "patch" ? "patch" : "performance").join(" and ")} banks are backed up first.` : " No backup will be made (see ⚙ Settings).";
+    $("pendingText").innerHTML = `<b>${n}</b> slot${n === 1 ? "" : "s"} staged. Nothing changes on the synth until you send.${esc(note)}`;
   }
 }
 
@@ -234,8 +269,7 @@ function renderDetails() {
       <h3>Preset</h3>
       <label>Name</label><input id="dName" value="${esc(p.name)}" maxlength="60">
       <label>Type</label>
-      <select id="dKind"><option value="patch" ${p.kind === "patch" ? "selected" : ""}>Patch</option>
-        <option value="performance" ${p.kind === "performance" ? "selected" : ""}>Performance</option></select>
+      <div>${p.kind === "performance" ? "Performance (.xsg) — goes into Performances A/B" : "Patch (.usg) — goes into the patch banks"}</div>
       <label>Tags</label>
       <div class="tag-editor">${p.tags.map((t) => `<span class="tag">${esc(t)} <span class="x" data-remove-tag="${esc(t)}">×</span></span>`).join("")}</div>
       <input id="dTag" placeholder="Add tag and press Enter (e.g. pad, bass, lead)" list="tagList">
@@ -255,6 +289,7 @@ function renderDetails() {
   const { bank, slot } = found;
   const pending = staged.get(key(bank.path, slot.slot));
   const pendingPreset = pending?.presetId && presetById(pending.presetId);
+  const libPreset = slot.presetId && presetById(slot.presetId);
   box.innerHTML = `
     <h3>Slot ${esc(bank.name)} · ${slot.slot}</h3>
     <div class="info">
@@ -265,6 +300,7 @@ function renderDetails() {
     </div>
     ${pending ? `<div class="info">Staged: <b>${pendingPreset ? esc(pendingPreset.name) : "clear slot"}</b></div>` : ""}
     <div class="row">
+      ${slot.file ? `<button id="sFav">${libPreset?.favorite ? "★ Unfavourite" : "☆ Favourite"}</button>` : ""}
       ${slot.file && !slot.presetId ? `<button id="sSave">Save to library</button>` : ""}
       ${slot.presetId ? `<button id="sShow">Show in library</button>` : ""}
       ${pending ? `<button id="sUnstage">Undo staged change</button>` : ""}
@@ -298,9 +334,10 @@ async function filesFromDataTransfer(dt) {
   return out;
 }
 
-// Only Super Gemini .usg presets are accepted; anything else could confuse the synth.
+// Only Super Gemini patches (.usg) and performances (.xsg) are accepted;
+// anything else could confuse the synth.
 function isPresetFile(name) {
-  return !name.startsWith(".") && name.toLowerCase().endsWith(".usg");
+  return !name.startsWith(".") && kindOfFile(name) !== null;
 }
 
 async function uploadFiles(items) {
@@ -317,7 +354,7 @@ async function uploadFiles(items) {
     if (res.created) created++;
   }
   const dupes = presets.length - created;
-  const skippedMsg = skipped ? `Skipped ${skipped} file(s) that aren't Super Gemini presets (.usg).` : "";
+  const skippedMsg = skipped ? `Skipped ${skipped} file(s) that aren't Super Gemini patches (.usg) or performances (.xsg).` : "";
   if (!presets.length && skipped) toast(skippedMsg, true, 8000);
   else toast(`Added ${created} preset${created === 1 ? "" : "s"} to the library` +
     (dupes ? ` (${dupes} already there)` : "") + "." + (skippedMsg ? " " + skippedMsg : ""), !!skipped, skipped ? 8000 : 5000);
@@ -379,9 +416,11 @@ function setupDnD() {
     const slot = e.target.closest?.(".slot");
     if (preset) {
       e.dataTransfer.setData(PRESET_MIME, preset.dataset.id);
+      e.dataTransfer.setData(KIND_MIME + preset.dataset.kind, "1");
       e.dataTransfer.effectAllowed = "copy";
     } else if (slot) {
-      e.dataTransfer.setData(SLOT_MIME, JSON.stringify({ bank: slot.dataset.bank, slot: +slot.dataset.slot }));
+      e.dataTransfer.setData(SLOT_MIME, JSON.stringify({ bank: slot.dataset.bank, slot: +slot.dataset.slot, kind: slot.dataset.kind }));
+      e.dataTransfer.setData(KIND_MIME + slot.dataset.kind, "1");
       e.dataTransfer.effectAllowed = "copy";
     }
   });
@@ -399,23 +438,37 @@ function setupDnD() {
     onFiles: (items) => uploadFiles(items),
   });
 
-  // slots accept presets, other slots and files
-  const slotFromEvent = (e) => e.target.closest?.(".slot");
+  // slots accept presets, other slots and files of the matching type only
+  const slotFromEvent = (e) => {
+    const el = e.target.closest?.(".slot");
+    if (!el) return null;
+    const dragged = [...e.dataTransfer.types].find((t) => t.startsWith(KIND_MIME));
+    if (dragged && dragged !== KIND_MIME + el.dataset.kind) return null; // wrong type: refuse the drop
+    return el;
+  };
   setupDropTarget($("banks"), {
     over: slotFromEvent,
     onPreset: (id, el) => {
+      const p = presetById(id);
+      if (p.kind !== el.dataset.kind) throw new Error(wrongKindMessage(p.name, p.kind));
       stage(el.dataset.bank, +el.dataset.slot, id);
       selected = { type: "slot", bank: el.dataset.bank, slot: +el.dataset.slot };
       render();
     },
     onSlot: async (src, el) => {
       if (src.bank === el.dataset.bank && src.slot === +el.dataset.slot) return;
+      if (src.kind !== el.dataset.kind) throw new Error(wrongKindMessage(`slot ${src.slot}`, src.kind));
       const id = await slotPresetId(src);
       stage(el.dataset.bank, +el.dataset.slot, id);
       render();
     },
     onFiles: async (items, el) => {
+      const kind = el.dataset.kind;
+      const wrong = items.filter(({ file }) => kindOfFile(file.name) && kindOfFile(file.name) !== kind);
+      items = items.filter((it) => !wrong.includes(it));
+      if (wrong.length && !items.length) throw new Error(wrongKindMessage(wrong[0].file.name, kindOfFile(wrong[0].file.name)));
       const presets = await uploadFiles(items);
+      if (wrong.length) toast(`${wrong.length} ${kind === "patch" ? "performance (.xsg)" : "patch (.usg)"} file(s) were left out — they don't belong in this folder.`, true, 8000);
       const bank = el.dataset.bank;
       let slot = +el.dataset.slot;
       // several files fill consecutive slots in the bank
@@ -443,8 +496,15 @@ function setupEvents() {
   $("search").addEventListener("input", renderLibrary);
 
   $("tagFilter").addEventListener("click", (e) => {
-    const t = e.target.closest(".tag");
+    const t = e.target.closest(".tag, button[data-kind]");
     if (!t) return;
+    const kb = e.target.closest("button[data-kind]");
+    if (kb) {
+      kindFilter = kb.dataset.kind;
+      renderTags();
+      renderLibrary();
+      return;
+    }
     if (t.dataset.fav) favoritesOnly = !favoritesOnly;
     else if (activeTags.has(t.dataset.tag)) activeTags.delete(t.dataset.tag);
     else activeTags.add(t.dataset.tag);
@@ -453,6 +513,8 @@ function setupEvents() {
   });
 
   $("presetList").addEventListener("click", (e) => {
+    const fav = e.target.closest("[data-fav-id]");
+    if (fav) return toggleFavorite(fav.dataset.favId);
     const li = e.target.closest(".preset");
     if (!li) return;
     selected = { type: "preset", id: li.dataset.id };
@@ -476,7 +538,6 @@ function setupEvents() {
   $("details").addEventListener("change", (e) => {
     if (e.target.id === "dName") savePreset({ name: e.target.value });
     if (e.target.id === "dNotes") savePreset({ notes: e.target.value });
-    if (e.target.id === "dKind") savePreset({ kind: e.target.value });
   });
 
   $("details").addEventListener("keydown", (e) => {
@@ -502,6 +563,12 @@ function setupEvents() {
         await api("DELETE", "library/" + p.id);
         selected = null;
         await refresh(true);
+      });
+    }
+    if (id === "sFav") {
+      await run(async () => {
+        const pid = await ensureSlotInLibrary(selected.bank, selected.slot);
+        await toggleFavorite(pid);
       });
     }
     if (id === "sSave") {
@@ -587,8 +654,9 @@ function setupEvents() {
     try {
       const res = await api("POST", "device/write", { changes });
       staged.clear();
-      toast(`Wrote ${res.written} slot(s). Backup saved first (${res.backup}). ` +
-        "Eject the drive and restart the Super Gemini to hear the new presets.", false, 12000);
+      const trash = res.trashFreed ? ` Emptied ${Math.ceil(res.trashFreed / 1024)} KB from the synth's trash.` : "";
+      toast(`Wrote ${res.written} slot(s).` + (res.backup ? ` Backup saved first (${res.backup}).` : "") + trash +
+        " Eject the drive and restart the Super Gemini to hear the new presets.", false, 12000);
       await refresh(true);
     } finally {
       btn.disabled = false;
@@ -600,6 +668,8 @@ function setupEvents() {
     $("drivePath").value = state.settings.drivePath || "";
     $("drivePath").disabled = !!state.settings.driveOverride;
     $("homePath").textContent = state.settings.home;
+    $("backupPatch").checked = state.settings.backup.patch;
+    $("backupPerformance").checked = state.settings.backup.performance;
     $("backupList").innerHTML = state.backups.length
       ? state.backups.map((b) => `<li><span>${esc(b.name)} · ${b.files} files</span>
           <button type="button" data-restore="${esc(b.name)}" ${state.device.connected ? "" : "disabled"}>Restore to synth</button></li>`).join("")
@@ -628,7 +698,10 @@ function setupEvents() {
   $("saveSettings").onclick = (e) => {
     e.preventDefault();
     run(async () => {
-      await api("POST", "settings", { drivePath: $("drivePath").value });
+      await api("POST", "settings", {
+        drivePath: $("drivePath").value,
+        backup: { patch: $("backupPatch").checked, performance: $("backupPerformance").checked },
+      });
       $("settingsDialog").close();
       await refresh(true);
     });
