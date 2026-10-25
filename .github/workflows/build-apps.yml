@@ -5,6 +5,11 @@ on:
     branches: ["main", "claude/**"]
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      publish:
+        description: "Publish a GitHub release for the version in the VERSION file"
+        type: boolean
+        default: false
 
 jobs:
   mac:
@@ -73,7 +78,7 @@ jobs:
           if-no-files-found: error
 
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.publish)
     needs: [mac, windows]
     runs-on: ubuntu-latest
     permissions:
@@ -86,9 +91,21 @@ jobs:
           path: dist
           merge-multiple: true
 
+      - name: Work out the version tag
+        id: version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "tag=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=v$(tr -d '[:space:]' < VERSION)" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          name: Super Gemini Librarian ${{ github.ref_name }}
+          tag_name: ${{ steps.version.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          make_latest: true
+          name: Super Gemini Librarian ${{ steps.version.outputs.tag }}
           body_path: packaging/release-notes.md
           files: dist/*

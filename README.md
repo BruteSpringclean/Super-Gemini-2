@@ -131,7 +131,8 @@ python3 -m unittest                                              # run the tests
 GitHub Actions builds, tests and smoke-tests the Mac and Windows apps on every push
 (`.github/workflows/build-apps.yml`). The files appear under the run's **Artifacts**. Pushing a tag
 such as `v1.0.0` publishes them on a **Release**, with the text from `packaging/release-notes.md`.
-For a new version, bump `VERSION` and push a matching tag.
+You can also publish without a tag: **Actions → Build apps → Run workflow**, tick **Publish a GitHub
+release**, and the release is named after the `VERSION` file. For a new version, bump `VERSION` first.
 
 On Windows: `powershell -ExecutionPolicy Bypass -File packaging\build_windows_app.ps1` (the
 installer step needs [Inno Setup 6](https://jrsoftware.org/isinfo.php)).
