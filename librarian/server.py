@@ -35,6 +35,9 @@ class App:
         self.library = core.Library(home)
         self.drive_override = drive_override
         self.write_lock = threading.Lock()
+        self.url = None
+        self.desktop = False   # True when running inside the Mac app's own window
+        self.on_quit = None    # set by the Mac app so Quit also closes its window
 
     def drive(self):
         return core.find_drive(self.drive_override or self.library.settings.get("drivePath"))
@@ -63,6 +66,7 @@ class App:
                 "backup": self.library.backup_settings(),
                 "home": self.library.home,
                 "driveOverride": self.drive_override,
+                "desktop": self.desktop,
             },
         }
 
@@ -218,7 +222,11 @@ def make_handler(app):
                 return {"ok": True}
 
             if parts == ["quit"] and method == "POST":
-                threading.Thread(target=self.server.shutdown, daemon=True).start()
+                threading.Thread(target=app.on_quit or self.server.shutdown, daemon=True).start()
+                return {"ok": True}
+
+            if parts == ["open-browser"] and method == "POST":
+                webbrowser.open(app.url)
                 return {"ok": True}
 
             if parts == ["reveal"] and method == "POST":
@@ -253,6 +261,15 @@ def free_port(preferred):
     raise SystemExit("No free port found near %d" % preferred)
 
 
+def start_server(home, drive=None, port=8765):
+    """Create the server on a free port near `port`. Call serve_forever() to run it."""
+    app = App(home, drive)
+    port = free_port(port)
+    httpd = ThreadingHTTPServer(("127.0.0.1", port), make_handler(app))
+    app.url = "http://127.0.0.1:%d/" % port
+    return httpd, app
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Preset librarian for the UDO Super Gemini")
     parser.add_argument("--port", type=int, default=8765)
@@ -269,10 +286,8 @@ def main(argv=None):
             webbrowser.open(url)
         return
 
-    app = App(args.home, args.drive)
-    port = free_port(args.port)
-    httpd = ThreadingHTTPServer(("127.0.0.1", port), make_handler(app))
-    url = "http://127.0.0.1:%d/" % port
+    httpd, app = start_server(args.home, args.drive, args.port)
+    url = app.url
     print("Super Gemini Librarian running at %s" % url)
     print("Library folder: %s" % args.home)
     print("Close this window (or press Ctrl+C) to quit.")

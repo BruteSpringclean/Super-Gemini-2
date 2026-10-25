@@ -668,6 +668,7 @@ function setupEvents() {
     $("drivePath").value = state.settings.drivePath || "";
     $("drivePath").disabled = !!state.settings.driveOverride;
     $("homePath").textContent = state.settings.home;
+    $("browserHint").hidden = !state.settings.desktop;
     $("backupPatch").checked = state.settings.backup.patch;
     $("backupPerformance").checked = state.settings.backup.performance;
     $("backupList").innerHTML = state.backups.length
@@ -689,6 +690,11 @@ function setupEvents() {
       await refresh(true);
     });
   });
+
+  $("openBrowser").onclick = (e) => {
+    e.preventDefault();
+    api("POST", "open-browser");
+  };
 
   $("revealHome").onclick = (e) => {
     e.preventDefault();
