@@ -1,0 +1,32 @@
+SUPER GEMINI LIBRARIAN
+A preset librarian for the UDO Super Gemini and Super 8.
+(An independent tool, not made by UDO Audio.)
+
+INSTALL
+1. Drag "Super Gemini Librarian" onto the Applications shortcut in this window.
+2. Open it from Applications or Launchpad.
+
+THE FIRST TIME YOU OPEN IT
+This app is not registered with Apple, so macOS will say it
+"could not verify" it, or that it is from an unidentified developer.
+To open it anyway:
+  1. Click Done (or Cancel) on that message.
+  2. Open System Settings > Privacy & Security.
+  3. Scroll down. Next to the message about "Super Gemini Librarian",
+     click "Open Anyway", then confirm with your password or Touch ID.
+On older macOS versions you can instead right-click (Control-click) the
+app, choose Open, then click Open.
+
+If macOS asks whether the app may access files on a removable volume,
+click Allow - that is how it reaches the synth.
+
+CONNECTING THE SYNTH
+1. Switch the Super Gemini off.
+2. Hold PATCH and switch it on. Release once the LEDs settle.
+3. Connect it to the Mac by USB. A disk named GEMINI appears, and the
+   librarian finds it within a few seconds.
+4. When finished, click Eject in the librarian, then restart the synth.
+
+Your library is kept in Music > Super Gemini Librarian.
+If something goes wrong, the log is in
+~/Library/Logs/Super Gemini Librarian.log
