@@ -18,7 +18,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 GEN_INLETS = 11
 GEN_OUTLETS = 31
-BUILD = 7                          # shown on the device, to tell versions apart
+BUILD = 8                          # shown on the device, to tell versions apart
 BUFFER_SLOTS = 2 + 64 * 6          # count, id counter, 64 keyframes of 6 values
 
 CURVES = ["Step", "Linear", "Accel", "Decel", "Smooth", "Bounce"]
@@ -570,6 +570,8 @@ def frame_variants(code):
         ("poly LFO: rate colour and phase/frequency spread", variant("", lfo_colour + lfo_spread)),
         ("poly LFO: waveforms and coupling", variant("", lfo_wave)),
         ("poly LFO: everything", variant("", lfo_all)),
+        ("keyframer with the ease() call replaced by a straight line",
+         variant(kf.replace("ease(tt, ce0)", "tt"), "")),
     ]
 
 

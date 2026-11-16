@@ -1,4 +1,4 @@
-// Keyframes - gen~ core. Build 7.
+// Keyframes - gen~ core. Build 8.
 //
 // A port of the Mutable Instruments Frames firmware (keyframer.cc, poly_lfo.cc,
 // frames.cc), Copyright 2013 Emilie Gillet, released under the MIT license.
@@ -13,29 +13,12 @@
 // variable is assigned before it is read, and a History is read only at the
 // top of the sample and written only at the bottom.
 
-bounce(b_t) {
-	b_r = 0;
-	b_u = 0;
-	if (b_t < 0.363636363636) {
-		b_r = 7.5625 * b_t * b_t;
-	} else if (b_t < 0.727272727273) {
-		b_u = b_t - 0.545454545455;
-		b_r = 7.5625 * b_u * b_u + 0.75;
-	} else if (b_t < 0.909090909091) {
-		b_u = b_t - 0.818181818182;
-		b_r = 7.5625 * b_u * b_u + 0.9375;
-	} else {
-		b_u = b_t - 0.954545454545;
-		b_r = 7.5625 * b_u * b_u + 0.984375;
-	}
-	return b_r;
-}
-
 // The six interpolation curves: step, linear, accelerating, decelerating,
 // smooth, bouncing.
 ease(e_t, e_curve) {
 	e_s = e_t;
 	e_q = 0;
+	e_u = 0;
 	if (e_curve < 0.5) {
 		e_s = 0;
 		if (e_t >= 0.5) {
@@ -51,7 +34,20 @@ ease(e_t, e_curve) {
 	} else if (e_curve < 4.5) {
 		e_s = 0.5 - 0.5 * cos(e_t * pi);
 	} else {
-		e_s = bounce(e_t);
+		// Bounce (a function of its own would be a function calling a
+		// function, which gen~ may not accept).
+		if (e_t < 0.363636363636) {
+			e_s = 7.5625 * e_t * e_t;
+		} else if (e_t < 0.727272727273) {
+			e_u = e_t - 0.545454545455;
+			e_s = 7.5625 * e_u * e_u + 0.75;
+		} else if (e_t < 0.909090909091) {
+			e_u = e_t - 0.818181818182;
+			e_s = 7.5625 * e_u * e_u + 0.9375;
+		} else {
+			e_u = e_t - 0.954545454545;
+			e_s = 7.5625 * e_u * e_u + 0.984375;
+		}
 	}
 	return e_s;
 }
