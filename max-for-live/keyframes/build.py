@@ -530,6 +530,62 @@ def diagnostic_codes(code):
             for n in range(len(sections))]
 
 
+def frame_variants(code):
+    """Versions of the code with only parts of the frame section kept.
+
+    The frame section is a keyframer branch and a Poly LFO branch; each is
+    cut into pieces so that the piece gen~ rejects can be found.
+    """
+    marks = [m for m in re.finditer(r"^// -{64} (.+)$", code, re.M)]
+    names = [m.group(1) for m in marks]
+    at = names.index("frame")
+    before = code[:marks[at].start()]
+    footer = code[marks[-1].start():]
+    frame = code[marks[at].start():marks[at + 1].start()]
+
+    def cut(text, start, end):
+        i = text.index(start)
+        j = text.index(end, i) if end else len(text)
+        return text[i:j]
+
+    head = frame[:frame.index("if (pmode < 1.5) {")]
+    kf = cut(frame, "\t// ------------------------------------------------------------ keyframer\n",
+             "\tfor (cc = 0; cc < 4; cc += 1) {\n\t\tlv0 = peek(lvl, cc);")
+    gains = cut(frame, "\tfor (cc = 0; cc < 4; cc += 1) {\n\t\tlv0 = peek(lvl, cc);",
+                "} else {")
+    lfo_all = cut(frame, "\t// ------------------------------------------------------------ poly LFO\n", None)
+    lfo_all = lfo_all[:lfo_all.rindex("}")]
+    lfo_colour = lfo_all[:lfo_all.index("\t// Phase spread")]
+    lfo_spread = cut(lfo_all, "\t// Phase spread", "\tucp = ")
+    lfo_wave = cut(lfo_all, "\tucp = ", None)
+
+    def variant(first, second):
+        return (before + head + "if (pmode < 1.5) {\n" + first + "} else {\n" +
+                second + "}\n\n" + footer)
+
+    return [
+        ("only the smoothing and colour set-up", variant("", "")),
+        ("keyframer: lookup and interpolation", variant(kf, "")),
+        ("keyframer: lookup and interpolation, and the gains", variant(kf + gains, "")),
+        ("poly LFO: rate colour and phase/frequency spread", variant("", lfo_colour + lfo_spread)),
+        ("poly LFO: waveforms and coupling", variant("", lfo_wave)),
+        ("poly LFO: everything", variant("", lfo_all)),
+    ]
+
+
+def write_frame_diagnostics(directory):
+    os.makedirs(directory, exist_ok=True)
+    with open(os.path.join(HERE, "src", "keyframes.genexpr")) as f:
+        code = f.read()
+    for n, (what, variant) in enumerate(frame_variants(code)):
+        text = json.dumps(patcher_json(build_patch(variant, "diagF %d" % n)),
+                          indent="\t") + "\n"
+        path = os.path.join(directory, "Keyframes-diagF-%d.amxd" % n)
+        with open(path, "wb") as f:
+            f.write(amxd_bytes(text))
+        print("diagF %d: %s" % (n, what))
+
+
 def write_diagnostics(directory):
     os.makedirs(directory, exist_ok=True)
     with open(os.path.join(HERE, "src", "keyframes.genexpr")) as f:
@@ -544,6 +600,9 @@ def write_diagnostics(directory):
 
 
 def main():
+    if len(sys.argv) == 3 and sys.argv[1] == "--diagnose-frame":
+        write_frame_diagnostics(sys.argv[2])
+        return
     if len(sys.argv) == 3 and sys.argv[1] == "--diagnose":
         write_diagnostics(sys.argv[2])
         return

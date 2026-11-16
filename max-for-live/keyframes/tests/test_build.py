@@ -123,6 +123,16 @@ class BuildTest(unittest.TestCase):
             self.assertEqual(variant.count("---- tables"), 1 if n else 0)
         self.assertLess(len(variants[0][1]), len(variants[5][1]))
 
+    def test_frame_diagnostic_versions(self):
+        variants = build.frame_variants(self.code)
+        self.assertEqual(len(variants), 6)
+        for _, variant in variants:
+            self.assertIn("out31 = nkf;", variant)
+            self.assertEqual(variant.count("{"), variant.count("}"))
+        full = dict(variants)["poly LFO: everything"]
+        self.assertIn("poke(lval, va + (vb - va) * tf, cc);", full)
+        self.assertNotIn("keyframer: lookup", full)
+
     def test_every_gen_parameter_has_a_control(self):
         declared = set(re.findall(r"^Param (\w+)\(", self.code, re.M))
         sent = {b["text"].split()[1] for b in self.boxes.values()
