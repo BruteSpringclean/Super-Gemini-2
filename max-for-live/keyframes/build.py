@@ -16,7 +16,7 @@ import struct
 HERE = os.path.dirname(os.path.abspath(__file__))
 GEN_INLETS = 11
 GEN_OUTLETS = 31
-BUILD = 6                          # shown on the device, to tell versions apart
+BUILD = 7                          # shown on the device, to tell versions apart
 BUFFER_SLOTS = 2 + 64 * 6          # count, id counter, 64 keyframes of 6 values
 
 CURVES = ["Step", "Linear", "Accel", "Decel", "Smooth", "Bounce"]

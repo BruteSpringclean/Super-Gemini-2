@@ -1,4 +1,4 @@
-// Keyframes - gen~ core. Build 6.
+// Keyframes - gen~ core. Build 7.
 //
 // A port of the Mutable Instruments Frames firmware (keyframer.cc, poly_lfo.cc,
 // frames.cc), Copyright 2013 Emilie Gillet, released under the MIT license.
@@ -323,6 +323,7 @@ wv = 0;
 ww = 0;
 
 fspread = 0;
+wic = 0;
 ispos = 0;
 lq = 0;
 phb = 0;
@@ -745,8 +746,11 @@ if (pmode < 1.5) {
 		pp = lp * 256;
 		pi0 = min(floor(pp), 255);
 		pf = pp - pi0;
-		ta = min(floor(wi), 15);
-		tf = wi - ta;
+		// Channel cc is cc steps of shape spread along the wavetables, wrapped.
+		wic = wi + wsp * cc;
+		wic = wic - 16 * floor(wic / 16);
+		ta = min(floor(wic), 15);
+		tf = wic - ta;
 		ba = ta * 257 + pi0;
 		wa0 = peek(wt, ba);
 		wb0 = peek(wt, ba + 1);
@@ -760,8 +764,6 @@ if (pmode < 1.5) {
 		poke(lsn, vs * 1.9921875 - 1, cc);
 		poke(lvl, va + (vb - va) * tf, cc);
 		poke(lval, va + (vb - va) * tf, cc);
-		wi = wi + wsp;
-		wi = wi - 16 * floor(wi / 16);
 	}
 }
 
