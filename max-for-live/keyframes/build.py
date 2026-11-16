@@ -16,6 +16,7 @@ import struct
 HERE = os.path.dirname(os.path.abspath(__file__))
 GEN_INLETS = 11
 GEN_OUTLETS = 31
+BUILD = 6                          # shown on the device, to tell versions apart
 BUFFER_SLOTS = 2 + 64 * 6          # count, id counter, 64 keyframes of 6 values
 
 CURVES = ["Step", "Linear", "Accel", "Decel", "Smooth", "Bounce"]
@@ -448,6 +449,8 @@ def build_patch(code):
         p.line(unmap_split, 0, clear_name, 0)
         p.line(clear_name, 0, name, 0)
 
+    p.box("comment", 1, 0, text="build %d" % BUILD, presentation=1,
+          presentation_rect=[272, 160, 94, 12], fontsize=8.0)
     return p
 
 
