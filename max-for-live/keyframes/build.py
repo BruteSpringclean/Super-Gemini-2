@@ -494,13 +494,6 @@ def patcher_json(p):
         "dependency_cache": [],
         "latency": 0,
         "is_mpe": 0,
-        "project": {
-            "version": 1, "creationdate": 3590052493,
-            "modificationdate": 3590052493, "viewrect": [0, 0, 300, 500],
-            "autoorganize": 1, "hideprojectwindow": 1, "showdependencies": 1,
-            "autolocalize": 0, "contents": {"patchers": {}}, "layouts": {},
-            "detailsvisible": 0, "amxdtype": 1633771873, "readonly": 0,
-            "devpathtype": 0, "devpath": ".", "sortmode": 0, "viewmode": 0},
         "autosave": 0,
     }}
 
