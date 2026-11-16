@@ -75,6 +75,24 @@ class BuildTest(unittest.TestCase):
             if re.search(r"\b(if|for|while)\b", code):
                 self.assertNotIn("peek(", code, "line %d: %s" % (number, line))
 
+    def test_every_peek_is_a_plain_read(self):
+        # gen~ splits peek() into hidden variables and fails to compile
+        # ("variable peek_N is not defined") when it is nested in another
+        # expression. Every peek must be the whole right-hand side of an
+        # assignment, with nothing but arithmetic in its index.
+        for number, line in enumerate(self.code.splitlines(), 1):
+            code = line.split("//")[0].strip()
+            if "peek(" not in code:
+                continue
+            m = re.match(r"^\w+ = peek\((\w+), ([^;]*)\);$", code)
+            self.assertTrue(m, "line %d: %s" % (number, line))
+            self.assertNotIn("peek(", m.group(2), "line %d" % number)
+            depth = 0
+            for ch in "peek(" + m.group(1) + ", " + m.group(2) + ")":
+                depth += (ch == "(") - (ch == ")")
+                self.assertGreaterEqual(depth, 0, "line %d" % number)
+            self.assertEqual(depth, 0, "line %d" % number)
+
     def test_every_gen_parameter_has_a_control(self):
         declared = set(re.findall(r"^Param (\w+)\(", self.code, re.M))
         sent = {b["text"].split()[1] for b in self.boxes.values()

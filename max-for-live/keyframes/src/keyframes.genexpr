@@ -207,6 +207,7 @@ History h_jt(0);
 
 // Loop counters, declared once at the top level.
 kts = 0;
+wr = 0;
 ii = 0;
 cc = 0;
 kk = 0;
@@ -301,7 +302,8 @@ if (h_inited == 0) {
 			wmx = max(wmx, wv);
 		}
 		for (ii = 0; ii < 256; ii += 1) {
-			wv = (peek(wt, ww * 257 + ii) - wmn) / (wmx - wmn);
+			wr = peek(wt, ww * 257 + ii);
+			wv = (wr - wmn) / (wmx - wmn);
 			// Round half to even, as numpy does in the firmware's table script.
 			wq = floor(wv * 255 + 0.5);
 			if (wq - wv * 255 == 0.5 && wq - 2 * floor(wq / 2) > 0.5) {
@@ -309,7 +311,8 @@ if (h_inited == 0) {
 			}
 			poke(wt, wq / 255, ww * 257 + ii);
 		}
-		poke(wt, peek(wt, ww * 257), ww * 257 + 256);
+		wr = peek(wt, ww * 257);
+		poke(wt, wr, ww * 257 + 256);
 	}
 }
 
@@ -327,7 +330,8 @@ poke(rsp, pow(clamp(prs2, 0, 100) * 0.01, 1.5), 1);
 poke(rsp, pow(clamp(prs3, 0, 100) * 0.01, 1.5), 2);
 poke(rsp, pow(clamp(prs4, 0, 100) * 0.01, 1.5), 3);
 
-nkf = clamp(floor(peek(frkf, 0) + 0.5), 0, 64);
+nk0 = peek(frkf, 0);
+nkf = clamp(floor(nk0 + 0.5), 0, 64);
 idc = peek(frkf, 1);
 rev = h_rev;
 jser = h_js;
@@ -358,7 +362,8 @@ if (nkf > 0) {
 		s1 = uidx + 2;
 	}
 	for (ii = s0; ii < s1; ii += 1) {
-		dd = peek(frkf, 2 + 6 * ii) - ufr;
+		dd = peek(frkf, 2 + 6 * ii);
+		dd = dd - ufr;
 		if (act < 0 && abs(dd) < 2048) {
 			act = ii;
 		}
@@ -373,7 +378,8 @@ if (padd != h_add && canedit && act < 0 && nkf < 64) {
 	for (kk = 0; kk < cnt; kk += 1) {
 		src = 2 + 6 * (nkf - 1 - kk);
 		for (ff = 0; ff < 6; ff += 1) {
-			poke(frkf, peek(frkf, src + ff), src + 6 + ff);
+			ts0 = peek(frkf, src + ff);
+			poke(frkf, ts0, src + 6 + ff);
 		}
 	}
 	dst = 2 + 6 * uidx;
@@ -417,7 +423,8 @@ if (pdel != h_del && canedit && act >= 0) {
 	for (ii = act; ii < nkf - 1; ii += 1) {
 		src = 2 + 6 * (ii + 1);
 		for (ff = 0; ff < 6; ff += 1) {
-			poke(frkf, peek(frkf, src + ff), src - 6 + ff);
+			ts0 = peek(frkf, src + ff);
+			poke(frkf, ts0, src - 6 + ff);
 		}
 	}
 	nkf = nkf - 1;
@@ -440,7 +447,8 @@ if (pclr != h_clr) {
 if (pkeyev != h_keyev) {
 	ksel = floor(pkeysel + 0.5);
 	if (ksel >= 1 && ksel <= nkf) {
-		jtgt = peek(frkf, 2 + 6 * (ksel - 1)) / 655.35;
+		jt0 = peek(frkf, 2 + 6 * (ksel - 1));
+		jtgt = jt0 / 655.35;
 		jser = jser + 1;
 	}
 }
@@ -507,7 +515,8 @@ if (pmode < 1.5) {
 				sb = 2 + 6 * (nkf - 1);
 			}
 			for (cc = 0; cc < 4; cc += 1) {
-				poke(lvl, peek(frkf, sb + 2 + cc) / 65535, cc);
+				lv0 = peek(frkf, sb + 2 + cc);
+				poke(lvl, lv0 / 65535, cc);
 			}
 			pid = peek(frkf, sb + 1);
 			pid = 3 * (pid - 8 * floor(pid / 8));
@@ -519,27 +528,37 @@ if (pmode < 1.5) {
 			sa = 2 + 6 * (eidx - 1);
 			sb = 2 + 6 * eidx;
 			tsa = peek(frkf, sa);
-			tt = (efr - tsa) / max(peek(frkf, sb) - tsa, 1);
+			tb0 = peek(frkf, sb);
+			tt = (efr - tsa) / max(tb0 - tsa, 1);
 			for (cc = 0; cc < 4; cc += 1) {
 				fa = peek(frkf, sa + 2 + cc);
 				fb = peek(frkf, sb + 2 + cc);
-				poke(lvl, (fa + (fb - fa) * ease(tt, peek(cvs, cc))) / 65535, cc);
+				ce0 = peek(cvs, cc);
+				poke(lvl, (fa + (fb - fa) * ease(tt, ce0)) / 65535, cc);
 			}
 			pid = peek(frkf, sa + 1);
 			pid = 3 * (pid - 8 * floor(pid / 8));
 			qid = peek(frkf, sb + 1);
 			qid = 3 * (qid - 8 * floor(qid / 8));
-			cr = peek(pal, pid) + (peek(pal, qid) - peek(pal, pid)) * tt;
-			cg = peek(pal, pid + 1) + (peek(pal, qid + 1) - peek(pal, pid + 1)) * tt;
-			cb = peek(pal, pid + 2) + (peek(pal, qid + 2) - peek(pal, pid + 2)) * tt;
+			pa0 = peek(pal, pid);
+			pb0 = peek(pal, qid);
+			cr = pa0 + (pb0 - pa0) * tt;
+			pa0 = peek(pal, pid + 1);
+			pb0 = peek(pal, qid + 1);
+			cg = pa0 + (pb0 - pa0) * tt;
+			pa0 = peek(pal, pid + 2);
+			pb0 = peek(pal, qid + 2);
+			cb = pa0 + (pb0 - pa0) * tt;
 		}
 		tthis = efr;
 		if (eidx > 0) {
-			tthis = efr - peek(frkf, 2 + 6 * (eidx - 1));
+			tp0 = peek(frkf, 2 + 6 * (eidx - 1));
+			tthis = efr - tp0;
 		}
 		tnext = 65536 - efr;
 		if (eidx < nkf) {
-			tnext = peek(frkf, 2 + 6 * eidx) - efr;
+			tn0 = peek(frkf, 2 + 6 * eidx);
+			tnext = tn0 - efr;
 		}
 		knear = eidx;
 		if (tnext < tthis) {
@@ -547,7 +566,9 @@ if (pmode < 1.5) {
 		}
 	}
 	for (cc = 0; cc < 4; cc += 1) {
-		poke(lval, vcagain(peek(lvl, cc), peek(rsp, cc)), cc);
+		lv0 = peek(lvl, cc);
+		rs0 = peek(rsp, cc);
+		poke(lval, vcagain(lv0, rs0), cc);
 	}
 } else {
 	// ------------------------------------------------------------ poly LFO
@@ -555,14 +576,21 @@ if (pmode < 1.5) {
 	ridx = sfr / 4096;
 	ri = min(floor(ridx), 15);
 	rf = ridx - ri;
-	cr = peek(rbw, ri * 3) + (peek(rbw, ri * 3 + 3) - peek(rbw, ri * 3)) * rf;
-	cg = peek(rbw, ri * 3 + 1) + (peek(rbw, ri * 3 + 4) - peek(rbw, ri * 3 + 1)) * rf;
-	cb = peek(rbw, ri * 3 + 2) + (peek(rbw, ri * 3 + 5) - peek(rbw, ri * 3 + 2)) * rf;
+	ra0 = peek(rbw, ri * 3);
+	rb0 = peek(rbw, ri * 3 + 3);
+	cr = ra0 + (rb0 - ra0) * rf;
+	ra0 = peek(rbw, ri * 3 + 1);
+	rb0 = peek(rbw, ri * 3 + 4);
+	cg = ra0 + (rb0 - ra0) * rf;
+	ra0 = peek(rbw, ri * 3 + 2);
+	rb0 = peek(rbw, ri * 3 + 5);
+	cb = ra0 + (rb0 - ra0) * rf;
 
 	usp = clamp(pspread, -100, 100) * 0.01;
 	if (usp >= 0) {
 		// Phase spread: up to a quarter cycle between neighbours.
-		lp = peek(lph, 0) + 110 * pow(2, sfr / 5040 - 13) / samplerate;
+		lp0 = peek(lph, 0);
+		lp = lp0 + 110 * pow(2, sfr / 5040 - 13) / samplerate;
 		lp = lp - floor(lp);
 		poke(lph, lp, 0);
 		for (cc = 1; cc < 4; cc += 1) {
@@ -575,7 +603,8 @@ if (pmode < 1.5) {
 		fsp = (usp - 3 * usp * usp) * 0.25;
 		lfc = sfr;
 		for (cc = 0; cc < 4; cc += 1) {
-			lp = peek(lph, cc) + 110 * pow(2, lfc / 5040 - 13) / samplerate;
+			lp0 = peek(lph, cc);
+			lp = lp0 + 110 * pow(2, lfc / 5040 - 13) / samplerate;
 			lp = lp - floor(lp);
 			poke(lph, lp, cc);
 			lfc = lfc - 5040 * fsp;
@@ -595,7 +624,9 @@ if (pmode < 1.5) {
 		if (nb > 3) {
 			nb = nb - 4;
 		}
-		lp = peek(lph, cc) + peek(lsn, nb) * abs(cpl);
+		lp0 = peek(lph, cc);
+		ls0 = peek(lsn, nb);
+		lp = lp0 + ls0 * abs(cpl);
 		lp = lp - floor(lp);
 		pp = lp * 256;
 		pi0 = min(floor(pp), 255);
@@ -603,9 +634,15 @@ if (pmode < 1.5) {
 		ta = min(floor(wi), 15);
 		tf = wi - ta;
 		ba = ta * 257 + pi0;
-		va = peek(wt, ba) + (peek(wt, ba + 1) - peek(wt, ba)) * pf;
-		vb = peek(wt, ba + 257) + (peek(wt, ba + 258) - peek(wt, ba + 257)) * pf;
-		vs = peek(wt, 4369 + pi0) + (peek(wt, 4370 + pi0) - peek(wt, 4369 + pi0)) * pf;
+		wa0 = peek(wt, ba);
+		wb0 = peek(wt, ba + 1);
+		va = wa0 + (wb0 - wa0) * pf;
+		wa0 = peek(wt, ba + 257);
+		wb0 = peek(wt, ba + 258);
+		vb = wa0 + (wb0 - wa0) * pf;
+		wa0 = peek(wt, 4369 + pi0);
+		wb0 = peek(wt, 4370 + pi0);
+		vs = wa0 + (wb0 - wa0) * pf;
 		poke(lsn, vs * 1.9921875 - 1, cc);
 		poke(lvl, va + (vb - va) * tf, cc);
 		poke(lval, va + (vb - va) * tf, cc);
@@ -634,7 +671,9 @@ if (pulse > 0) {
 // ---------------------------------------------------------------- VCAs
 gk = 1 - exp(-1 / (0.001 * samplerate));
 for (cc = 0; cc < 4; cc += 1) {
-	poke(gsm, peek(gsm, cc) + (peek(lval, cc) - peek(gsm, cc)) * gk, cc);
+	gs0 = peek(gsm, cc);
+	gl0 = peek(lval, cc);
+	poke(gsm, gs0 + (gl0 - gs0) * gk, cc);
 }
 g1 = peek(gsm, 0);
 g2 = peek(gsm, 1);
