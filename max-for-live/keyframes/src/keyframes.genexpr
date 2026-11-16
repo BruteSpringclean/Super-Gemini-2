@@ -1,0 +1,864 @@
+// Keyframes - gen~ core. Build 9.
+//
+// A port of the Mutable Instruments Frames firmware (keyframer.cc, poly_lfo.cc,
+// frames.cc), Copyright 2013 Emilie Gillet, released under the MIT license.
+// See LICENSE-frames.txt next to this file.
+//
+// Keyframes live in the buffer~ "frkf" so the patch can save them with the Live
+// set: [0] = keyframe count, [1] = id counter, then 6 values per keyframe:
+// timestamp (0..65535), id, and four levels (0..65535).
+//
+// This file is also run by tests/test_core.js, so it sticks to a subset of
+// GenExpr that is valid JavaScript once the declarations are stripped: every
+// variable is assigned before it is read, and a History is read only at the
+// top of the sample and written only at the bottom.
+
+// One point of a Poly LFO wavetable before it is normalised. Tables 12
+// (stepped triangle) and 16 (random) are built in the main code.
+rawwave(w_w, w_i) {
+	w_t = w_i / 256;
+	w_tri = 2 * w_t;
+	if (w_t >= 0.5) {
+		w_tri = 2 - 2 * w_t;
+	}
+	w_sin = sin(2 * pi * w_t);
+	w_rev = (255 - w_i) / 256;
+	w_v = 0;
+	w_j = 0;
+	w_f = 0;
+	if (w_w == 0) {
+		w_v = w_t * w_t * w_t * w_t;
+	} else if (w_w == 1) {
+		w_v = w_t;
+	} else if (w_w == 2) {
+		w_v = w_tri;
+	} else if (w_w == 3) {
+		w_v = w_rev;
+	} else if (w_w == 4) {
+		w_v = w_rev * w_rev * w_rev * w_rev;
+	} else if (w_w == 5) {
+		w_v = max(w_sin, 0) * (1 - cos(4 * pi * w_t)) * 0.5;
+	} else if (w_w == 6) {
+		if (w_t < 0.5) {
+			w_v = 1;
+		}
+	} else if (w_w == 7) {
+		w_v = w_sin * w_sin * w_sin;
+	} else if (w_w == 8) {
+		w_v = w_sin;
+	} else if (w_w == 9) {
+		w_v = w_sin + 0.7 * sin(4 * pi * w_t);
+	} else if (w_w == 10) {
+		w_v = w_sin + 0.7 * sin(6 * pi * w_t);
+	} else if (w_w == 11) {
+		w_v = w_sin + 0.7 * sin(10 * pi * w_t);
+	} else if (w_w == 13 || w_w == 14) {
+		w_j = w_i + 128;
+		if (w_j >= 256) {
+			w_j = w_j - 256;
+		}
+		w_f = 2 * w_j / 256;
+		if (w_j >= 128) {
+			w_f = 2 - 2 * w_j / 256;
+		}
+		w_f = 2 * w_f - 1;
+		if (w_w == 13) {
+			w_f = 2 * w_f;
+		} else {
+			w_f = 1.5 * w_f;
+		}
+		if (w_f > 1) {
+			w_f = 2 - w_f;
+		}
+		if (w_f < -1) {
+			w_f = -2 - w_f;
+		}
+		w_v = 0 - w_f;
+	} else if (w_w == 15) {
+		w_v = pow(2, 4 * w_tri) - 1;
+	} else if (w_w == 17) {
+		w_v = w_sin;
+	}
+	return w_v;
+}
+
+Buffer frkf("frkf");
+Data wt(4626);
+Data pal(24);
+Data rbw(51);
+Data cvs(4);
+Data rsp(4);
+Data lvl(4);
+Data lph(4);
+Data lval(4);
+Data lsn(4);
+Data gsm(4);
+
+Param pframe(0, min=0, max=100);
+Param plv1(0, min=0, max=100);
+Param plv2(0, min=0, max=100);
+Param plv3(0, min=0, max=100);
+Param plv4(0, min=0, max=100);
+Param pev1(0);
+Param pev2(0);
+Param pev3(0);
+Param pev4(0);
+Param padd(0);
+Param pdel(0);
+Param pclr(0);
+Param pstep(0);
+Param pkeysel(0, min=0, max=64);
+Param pkeyev(0);
+Param pmode(0, min=0, max=2);
+Param pdiv(0, min=0, max=6);
+Param pcv1(1, min=0, max=5);
+Param pcv2(1, min=0, max=5);
+Param pcv3(1, min=0, max=5);
+Param pcv4(1, min=0, max=5);
+Param prs1(0, min=0, max=100);
+Param prs2(0, min=0, max=100);
+Param prs3(0, min=0, max=100);
+Param prs4(0, min=0, max=100);
+Param pshape(0, min=0, max=100);
+Param pshspr(0, min=-100, max=100);
+Param pspread(0, min=-100, max=100);
+Param pcoup(0, min=-100, max=100);
+Param pmx1(1, min=0, max=1);
+Param pmx2(1, min=0, max=1);
+Param pmx3(1, min=0, max=1);
+Param pmx4(1, min=0, max=1);
+
+History h_inited(0);
+History h_add(0);
+History h_del(0);
+History h_clr(0);
+History h_step(0);
+History h_ev1(0);
+History h_ev2(0);
+History h_ev3(0);
+History h_ev4(0);
+History h_keyev(0);
+History h_seq(0);
+History h_si(-1);
+History h_bph(0);
+History h_sframe(0);
+History h_ppos(-2);
+History h_pnear(-2);
+History h_canfire(0);
+History h_pulse(0);
+History h_rev(0);
+History h_js(0);
+History h_jt(0);
+
+// gen~ only sees a variable that is first assigned at the top level, not
+// one first assigned inside an if or a for, so every variable is declared
+// here. tests/test_build.py checks that this stays true.
+act = 0;
+av1 = 0;
+av2 = 0;
+av3 = 0;
+av4 = 0;
+ba = 0;
+c1l = 0;
+c1r = 0;
+c2l = 0;
+c2r = 0;
+c3l = 0;
+c3r = 0;
+c4l = 0;
+c4r = 0;
+canedit = 0;
+canfire = 0;
+cb = 0;
+cc = 0;
+ce0 = 0;
+cg = 0;
+cnt = 0;
+cpl = 0;
+cr = 0;
+dd = 0;
+dst = 0;
+efr = 0;
+eidx = 0;
+fa = 0;
+fb = 0;
+ff = 0;
+g1 = 0;
+g2 = 0;
+g3 = 0;
+g4 = 0;
+gk = 0;
+gl0 = 0;
+gs0 = 0;
+idc = 0;
+ii = 0;
+jser = 0;
+jt0 = 0;
+jtgt = 0;
+kk = 0;
+knear = 0;
+kpos = 0;
+ksel = 0;
+kts = 0;
+kv1 = 0;
+kv2 = 0;
+kv3 = 0;
+kv4 = 0;
+lfc = 0;
+lp = 0;
+lp0 = 0;
+ls0 = 0;
+lv0 = 0;
+nb = 0;
+nk0 = 0;
+nkf = 0;
+pa0 = 0;
+pb0 = 0;
+pf = 0;
+pi0 = 0;
+pid = 0;
+pp = 0;
+pulse = 0;
+qid = 0;
+ra0 = 0;
+rb0 = 0;
+rev = 0;
+rf = 0;
+ri = 0;
+ridx = 0;
+rs0 = 0;
+s0 = 0;
+s1 = 0;
+sa = 0;
+sb = 0;
+sfr = 0;
+si = 0;
+sq = 0;
+src = 0;
+strig = 0;
+ta = 0;
+tb0 = 0;
+tf = 0;
+tn0 = 0;
+tnext = 0;
+tp0 = 0;
+trg = 0;
+ts0 = 0;
+tsa = 0;
+tt = 0;
+tthis = 0;
+ucp = 0;
+ufr = 0;
+uidx = 0;
+usp = 0;
+va = 0;
+vb = 0;
+vs = 0;
+wa0 = 0;
+wacc = 0;
+wb0 = 0;
+wd = 0;
+wi = 0;
+wmn = 0;
+wmx = 0;
+wq = 0;
+wr = 0;
+wsp = 0;
+wv = 0;
+ww = 0;
+
+fspread = 0;
+wic = 0;
+ispos = 0;
+lq = 0;
+phb = 0;
+uneg = 0;
+upos = 0;
+
+eq = 0;
+es = 0;
+eu = 0;
+vgc = 0;
+vgl = 0;
+
+// ---------------------------------------------------------------- tables
+if (h_inited == 0) {
+	// Keyframe colours.
+	poke(pal, 255, 0); poke(pal, 0, 1); poke(pal, 0, 2);
+	poke(pal, 255, 3); poke(pal, 64, 4); poke(pal, 0, 5);
+	poke(pal, 255, 6); poke(pal, 255, 7); poke(pal, 0, 8);
+	poke(pal, 64, 9); poke(pal, 255, 10); poke(pal, 0, 11);
+	poke(pal, 0, 12); poke(pal, 255, 13); poke(pal, 64, 14);
+	poke(pal, 0, 15); poke(pal, 0, 16); poke(pal, 255, 17);
+	poke(pal, 255, 18); poke(pal, 0, 19); poke(pal, 255, 20);
+	poke(pal, 255, 21); poke(pal, 0, 22); poke(pal, 64, 23);
+	// Poly LFO rate colours.
+	poke(rbw, 255, 0); poke(rbw, 0, 1); poke(rbw, 0, 2);
+	poke(rbw, 255, 3); poke(rbw, 32, 4); poke(rbw, 0, 5);
+	poke(rbw, 255, 6); poke(rbw, 192, 7); poke(rbw, 0, 8);
+	poke(rbw, 255, 9); poke(rbw, 240, 10); poke(rbw, 0, 11);
+	poke(rbw, 240, 12); poke(rbw, 255, 13); poke(rbw, 0, 14);
+	poke(rbw, 192, 15); poke(rbw, 255, 16); poke(rbw, 0, 17);
+	poke(rbw, 32, 18); poke(rbw, 255, 19); poke(rbw, 0, 20);
+	poke(rbw, 0, 21); poke(rbw, 255, 22); poke(rbw, 0, 23);
+	poke(rbw, 0, 24); poke(rbw, 255, 25); poke(rbw, 32, 26);
+	poke(rbw, 0, 27); poke(rbw, 255, 28); poke(rbw, 192, 29);
+	poke(rbw, 0, 30); poke(rbw, 255, 31); poke(rbw, 255, 32);
+	poke(rbw, 0, 33); poke(rbw, 192, 34); poke(rbw, 255, 35);
+	poke(rbw, 0, 36); poke(rbw, 32, 37); poke(rbw, 255, 38);
+	poke(rbw, 0, 39); poke(rbw, 0, 40); poke(rbw, 255, 41);
+	poke(rbw, 32, 42); poke(rbw, 0, 43); poke(rbw, 255, 44);
+	poke(rbw, 192, 45); poke(rbw, 0, 46); poke(rbw, 192, 47);
+	poke(rbw, 255, 48); poke(rbw, 0, 49); poke(rbw, 128, 50);
+	// The firmware's "random" wavetable (numpy, seed 999).
+	poke(wt, 205, 4112); poke(wt, 134, 4113); poke(wt, 30, 4114); poke(wt, 163, 4115); poke(wt, 23, 4116); poke(wt, 84, 4117); poke(wt, 109, 4118); poke(wt, 141, 4119);
+	poke(wt, 160, 4120); poke(wt, 178, 4121); poke(wt, 202, 4122); poke(wt, 33, 4123); poke(wt, 87, 4124); poke(wt, 51, 4125); poke(wt, 180, 4126); poke(wt, 8, 4127);
+	poke(wt, 232, 4128); poke(wt, 103, 4129); poke(wt, 194, 4130); poke(wt, 121, 4131); poke(wt, 73, 4132); poke(wt, 192, 4133); poke(wt, 24, 4134); poke(wt, 105, 4135);
+	poke(wt, 72, 4136); poke(wt, 99, 4137); poke(wt, 222, 4138); poke(wt, 20, 4139); poke(wt, 142, 4140); poke(wt, 140, 4141); poke(wt, 84, 4142); poke(wt, 248, 4143);
+	poke(wt, 73, 4144); poke(wt, 130, 4145); poke(wt, 37, 4146); poke(wt, 50, 4147); poke(wt, 215, 4148); poke(wt, 1, 4149); poke(wt, 200, 4150); poke(wt, 213, 4151);
+	poke(wt, 239, 4152); poke(wt, 248, 4153); poke(wt, 212, 4154); poke(wt, 16, 4155); poke(wt, 103, 4156); poke(wt, 95, 4157); poke(wt, 129, 4158); poke(wt, 250, 4159);
+	poke(wt, 209, 4160); poke(wt, 48, 4161); poke(wt, 178, 4162); poke(wt, 174, 4163); poke(wt, 255, 4164); poke(wt, 123, 4165); poke(wt, 186, 4166); poke(wt, 203, 4167);
+	poke(wt, 66, 4168); poke(wt, 41, 4169); poke(wt, 178, 4170); poke(wt, 230, 4171); poke(wt, 234, 4172); poke(wt, 79, 4173); poke(wt, 244, 4174); poke(wt, 185, 4175);
+	poke(wt, 5, 4176); poke(wt, 185, 4177); poke(wt, 148, 4178); poke(wt, 244, 4179); poke(wt, 189, 4180); poke(wt, 50, 4181); poke(wt, 242, 4182); poke(wt, 219, 4183);
+	poke(wt, 114, 4184); poke(wt, 210, 4185); poke(wt, 255, 4186); poke(wt, 144, 4187); poke(wt, 150, 4188); poke(wt, 108, 4189); poke(wt, 229, 4190); poke(wt, 113, 4191);
+	poke(wt, 147, 4192); poke(wt, 168, 4193); poke(wt, 77, 4194); poke(wt, 5, 4195); poke(wt, 214, 4196); poke(wt, 81, 4197); poke(wt, 96, 4198); poke(wt, 46, 4199);
+	poke(wt, 212, 4200); poke(wt, 47, 4201); poke(wt, 247, 4202); poke(wt, 178, 4203); poke(wt, 154, 4204); poke(wt, 126, 4205); poke(wt, 181, 4206); poke(wt, 66, 4207);
+	poke(wt, 166, 4208); poke(wt, 159, 4209); poke(wt, 213, 4210); poke(wt, 91, 4211); poke(wt, 244, 4212); poke(wt, 16, 4213); poke(wt, 221, 4214); poke(wt, 141, 4215);
+	poke(wt, 227, 4216); poke(wt, 191, 4217); poke(wt, 53, 4218); poke(wt, 124, 4219); poke(wt, 151, 4220); poke(wt, 222, 4221); poke(wt, 204, 4222); poke(wt, 244, 4223);
+	poke(wt, 44, 4224); poke(wt, 27, 4225); poke(wt, 160, 4226); poke(wt, 95, 4227); poke(wt, 166, 4228); poke(wt, 175, 4229); poke(wt, 121, 4230); poke(wt, 170, 4231);
+	poke(wt, 243, 4232); poke(wt, 46, 4233); poke(wt, 179, 4234); poke(wt, 114, 4235); poke(wt, 134, 4236); poke(wt, 23, 4237); poke(wt, 171, 4238); poke(wt, 233, 4239);
+	poke(wt, 84, 4240); poke(wt, 247, 4241); poke(wt, 44, 4242); poke(wt, 14, 4243); poke(wt, 15, 4244); poke(wt, 199, 4245); poke(wt, 144, 4246); poke(wt, 34, 4247);
+	poke(wt, 123, 4248); poke(wt, 168, 4249); poke(wt, 238, 4250); poke(wt, 138, 4251); poke(wt, 72, 4252); poke(wt, 55, 4253); poke(wt, 189, 4254); poke(wt, 127, 4255);
+	poke(wt, 42, 4256); poke(wt, 245, 4257); poke(wt, 91, 4258); poke(wt, 102, 4259); poke(wt, 175, 4260); poke(wt, 238, 4261); poke(wt, 98, 4262); poke(wt, 89, 4263);
+	poke(wt, 95, 4264); poke(wt, 43, 4265); poke(wt, 45, 4266); poke(wt, 164, 4267); poke(wt, 249, 4268); poke(wt, 18, 4269); poke(wt, 33, 4270); poke(wt, 209, 4271);
+	poke(wt, 199, 4272); poke(wt, 250, 4273); poke(wt, 53, 4274); poke(wt, 239, 4275); poke(wt, 31, 4276); poke(wt, 178, 4277); poke(wt, 233, 4278); poke(wt, 133, 4279);
+	poke(wt, 102, 4280); poke(wt, 197, 4281); poke(wt, 210, 4282); poke(wt, 243, 4283); poke(wt, 17, 4284); poke(wt, 49, 4285); poke(wt, 200, 4286); poke(wt, 172, 4287);
+	poke(wt, 69, 4288); poke(wt, 0, 4289); poke(wt, 151, 4290); poke(wt, 209, 4291); poke(wt, 117, 4292); poke(wt, 168, 4293); poke(wt, 132, 4294); poke(wt, 244, 4295);
+	poke(wt, 210, 4296); poke(wt, 102, 4297); poke(wt, 228, 4298); poke(wt, 68, 4299); poke(wt, 138, 4300); poke(wt, 64, 4301); poke(wt, 135, 4302); poke(wt, 124, 4303);
+	poke(wt, 250, 4304); poke(wt, 131, 4305); poke(wt, 77, 4306); poke(wt, 56, 4307); poke(wt, 142, 4308); poke(wt, 98, 4309); poke(wt, 218, 4310); poke(wt, 15, 4311);
+	poke(wt, 22, 4312); poke(wt, 128, 4313); poke(wt, 93, 4314); poke(wt, 190, 4315); poke(wt, 26, 4316); poke(wt, 245, 4317); poke(wt, 174, 4318); poke(wt, 10, 4319);
+	poke(wt, 21, 4320); poke(wt, 162, 4321); poke(wt, 198, 4322); poke(wt, 73, 4323); poke(wt, 76, 4324); poke(wt, 69, 4325); poke(wt, 71, 4326); poke(wt, 19, 4327);
+	poke(wt, 138, 4328); poke(wt, 1, 4329); poke(wt, 189, 4330); poke(wt, 215, 4331); poke(wt, 27, 4332); poke(wt, 68, 4333); poke(wt, 41, 4334); poke(wt, 143, 4335);
+	poke(wt, 244, 4336); poke(wt, 48, 4337); poke(wt, 239, 4338); poke(wt, 131, 4339); poke(wt, 66, 4340); poke(wt, 198, 4341); poke(wt, 87, 4342); poke(wt, 82, 4343);
+	poke(wt, 212, 4344); poke(wt, 57, 4345); poke(wt, 37, 4346); poke(wt, 61, 4347); poke(wt, 46, 4348); poke(wt, 68, 4349); poke(wt, 89, 4350); poke(wt, 209, 4351);
+	poke(wt, 80, 4352); poke(wt, 214, 4353); poke(wt, 9, 4354); poke(wt, 148, 4355); poke(wt, 151, 4356); poke(wt, 151, 4357); poke(wt, 166, 4358); poke(wt, 228, 4359);
+	poke(wt, 51, 4360); poke(wt, 10, 4361); poke(wt, 86, 4362); poke(wt, 144, 4363); poke(wt, 186, 4364); poke(wt, 209, 4365); poke(wt, 212, 4366); poke(wt, 28, 4367);
+	// Build and normalise the 18 wavetables: 256 points plus a wrap point.
+	for (ww = 0; ww < 18; ww += 1) {
+		wmn = 1000000;
+		wmx = -1000000;
+		wacc = 0;
+		for (ii = 0; ii < 256; ii += 1) {
+			wv = 0;
+			if (ww == 12) {
+				if (ii > 0) {
+					wd = rawwave(10, ii) - rawwave(10, ii - 1);
+					if (wd > 0) {
+						wacc = wacc + 1;
+					} else if (wd < 0) {
+						wacc = wacc - 1;
+					}
+				}
+				wv = wacc;
+			} else if (ww == 16) {
+				wv = peek(wt, 4112 + ii);
+			} else {
+				wv = rawwave(ww, ii);
+			}
+			poke(wt, wv, ww * 257 + ii);
+			wmn = min(wmn, wv);
+			wmx = max(wmx, wv);
+		}
+		for (ii = 0; ii < 256; ii += 1) {
+			wr = peek(wt, ww * 257 + ii);
+			wv = (wr - wmn) / (wmx - wmn);
+			// Round half to even, as numpy does in the firmware's table script.
+			wq = floor(wv * 255 + 0.5);
+			if (wq - wv * 255 == 0.5 && wq - 2 * floor(wq / 2) > 0.5) {
+				wq = wq - 1;
+			}
+			poke(wt, wq / 255, ww * 257 + ii);
+		}
+		wr = peek(wt, ww * 257);
+		poke(wt, wr, ww * 257 + 256);
+	}
+}
+
+// ---------------------------------------------------------------- inputs
+kv1 = floor(clamp(plv1, 0, 100) * 655.35 + 0.5);
+kv2 = floor(clamp(plv2, 0, 100) * 655.35 + 0.5);
+kv3 = floor(clamp(plv3, 0, 100) * 655.35 + 0.5);
+kv4 = floor(clamp(plv4, 0, 100) * 655.35 + 0.5);
+poke(cvs, pcv1, 0);
+poke(cvs, pcv2, 1);
+poke(cvs, pcv3, 2);
+poke(cvs, pcv4, 3);
+poke(rsp, pow(clamp(prs1, 0, 100) * 0.01, 1.5), 0);
+poke(rsp, pow(clamp(prs2, 0, 100) * 0.01, 1.5), 1);
+poke(rsp, pow(clamp(prs3, 0, 100) * 0.01, 1.5), 2);
+poke(rsp, pow(clamp(prs4, 0, 100) * 0.01, 1.5), 3);
+
+nk0 = peek(frkf, 0);
+nkf = clamp(floor(nk0 + 0.5), 0, 64);
+idc = peek(frkf, 1);
+rev = h_rev;
+jser = h_js;
+jtgt = h_jt;
+sq = h_seq;
+canfire = h_canfire;
+pulse = h_pulse;
+
+// Position of the FRAME control, as the firmware's 16-bit timestamp.
+ufr = floor(clamp(pframe, 0, 100) * 655.35 + 0.5);
+
+// Index of the first keyframe at or after the FRAME control.
+uidx = 0;
+for (ii = 0; ii < nkf; ii += 1) {
+	kts = peek(frkf, 2 + 6 * ii);
+	if (kts < ufr) {
+		uidx = ii + 1;
+	}
+}
+
+// The keyframe under the FRAME control, if there is one within reach (the
+// KEYFRAME LED). This is the one the level controls edit.
+act = -1;
+if (nkf > 0) {
+	s0 = max(uidx - 1, 0);
+	s1 = nkf;
+	if (uidx < nkf - 1) {
+		s1 = uidx + 2;
+	}
+	for (ii = s0; ii < s1; ii += 1) {
+		dd = peek(frkf, 2 + 6 * ii);
+		dd = dd - ufr;
+		if (act < 0 && abs(dd) < 2048) {
+			act = ii;
+		}
+	}
+}
+canedit = pmode < 1.5;
+
+// ---------------------------------------------------------------- editing
+// ADD: a new keyframe here, holding the current level controls.
+if (padd != h_add && canedit && act < 0 && nkf < 64) {
+	cnt = nkf - uidx;
+	for (kk = 0; kk < cnt; kk += 1) {
+		src = 2 + 6 * (nkf - 1 - kk);
+		for (ff = 0; ff < 6; ff += 1) {
+			ts0 = peek(frkf, src + ff);
+			poke(frkf, ts0, src + 6 + ff);
+		}
+	}
+	dst = 2 + 6 * uidx;
+	poke(frkf, ufr, dst);
+	poke(frkf, idc, dst + 1);
+	poke(frkf, kv1, dst + 2);
+	poke(frkf, kv2, dst + 3);
+	poke(frkf, kv3, dst + 4);
+	poke(frkf, kv4, dst + 5);
+	idc = idc + 1;
+	if (idc >= 65536) {
+		idc = 0;
+	}
+	nkf = nkf + 1;
+	act = uidx;
+	rev = rev + 1;
+	poke(frkf, nkf, 0);
+	poke(frkf, idc, 1);
+}
+
+// A level control moved while on a keyframe: store it there.
+if (pev1 != h_ev1 && canedit && act >= 0) {
+	poke(frkf, kv1, 4 + 6 * act);
+	rev = rev + 1;
+}
+if (pev2 != h_ev2 && canedit && act >= 0) {
+	poke(frkf, kv2, 5 + 6 * act);
+	rev = rev + 1;
+}
+if (pev3 != h_ev3 && canedit && act >= 0) {
+	poke(frkf, kv3, 6 + 6 * act);
+	rev = rev + 1;
+}
+if (pev4 != h_ev4 && canedit && act >= 0) {
+	poke(frkf, kv4, 7 + 6 * act);
+	rev = rev + 1;
+}
+
+// DEL: remove the keyframe under the FRAME control.
+if (pdel != h_del && canedit && act >= 0) {
+	for (ii = act; ii < nkf - 1; ii += 1) {
+		src = 2 + 6 * (ii + 1);
+		for (ff = 0; ff < 6; ff += 1) {
+			ts0 = peek(frkf, src + ff);
+			poke(frkf, ts0, src - 6 + ff);
+		}
+	}
+	nkf = nkf - 1;
+	act = -1;
+	rev = rev + 1;
+	poke(frkf, nkf, 0);
+}
+
+// Clear everything.
+if (pclr != h_clr) {
+	nkf = 0;
+	idc = 0;
+	act = -1;
+	rev = rev + 1;
+	poke(frkf, 0, 0);
+	poke(frkf, 0, 1);
+}
+
+// Key control: ask the patch to move FRAME onto keyframe number pkeysel.
+if (pkeyev != h_keyev) {
+	ksel = floor(pkeysel + 0.5);
+	if (ksel >= 1 && ksel <= nkf) {
+		jt0 = peek(frkf, 2 + 6 * (ksel - 1));
+		jtgt = jt0 / 655.35;
+		jser = jser + 1;
+	}
+}
+
+// ---------------------------------------------------------------- sequencer
+// A step on the Seq Step control, or on each division of the transport bar
+// phasor arriving at in11.
+strig = 0;
+if (pstep != h_step) {
+	strig = 1;
+}
+si = -1;
+if (pdiv > 0.5) {
+	si = floor(in11 * pow(2, floor(pdiv + 0.5) - 1));
+	if (h_si >= 0) {
+		if (si != h_si || in11 < h_bph) {
+			strig = 1;
+		}
+	}
+}
+if (strig > 0) {
+	sq = sq + 1;
+}
+if (sq >= nkf) {
+	sq = 0;
+}
+
+// ---------------------------------------------------------------- frame
+// The FRAME control is smoothed a little, as in firmware 1.1.
+sfr = h_sframe + (ufr - h_sframe) * (1 - exp(-1 / (0.002 * samplerate)));
+efr = floor(sfr + 0.5);
+if (pmode > 0.5 && pmode < 1.5 && nkf > 0) {
+	efr = peek(frkf, 2 + 6 * sq);
+}
+
+cr = 255;
+cg = 255;
+cb = 255;
+kpos = h_ppos;
+knear = h_pnear;
+
+if (pmode < 1.5) {
+	// ------------------------------------------------------------ keyframer
+	if (nkf < 1) {
+		poke(lvl, kv1 / 65535, 0);
+		poke(lvl, kv2 / 65535, 1);
+		poke(lvl, kv3 / 65535, 2);
+		poke(lvl, kv4 / 65535, 3);
+		kpos = -1;
+		knear = -1;
+	} else {
+		eidx = 0;
+		for (ii = 0; ii < nkf; ii += 1) {
+			kts = peek(frkf, 2 + 6 * ii);
+			if (kts < efr) {
+				eidx = ii + 1;
+			}
+		}
+		kpos = eidx;
+		if (eidx == 0 || eidx == nkf) {
+			// Before the first keyframe or after the last one.
+			sb = 2;
+			if (eidx > 0) {
+				sb = 2 + 6 * (nkf - 1);
+			}
+			for (cc = 0; cc < 4; cc += 1) {
+				lv0 = peek(frkf, sb + 2 + cc);
+				poke(lvl, lv0 / 65535, cc);
+			}
+			pid = peek(frkf, sb + 1);
+			pid = 3 * (pid - 8 * floor(pid / 8));
+			cr = peek(pal, pid);
+			cg = peek(pal, pid + 1);
+			cb = peek(pal, pid + 2);
+		} else {
+			// Between two keyframes.
+			sa = 2 + 6 * (eidx - 1);
+			sb = 2 + 6 * eidx;
+			tsa = peek(frkf, sa);
+			tb0 = peek(frkf, sb);
+			tt = (efr - tsa) / max(tb0 - tsa, 1);
+			for (cc = 0; cc < 4; cc += 1) {
+				fa = peek(frkf, sa + 2 + cc);
+				fb = peek(frkf, sb + 2 + cc);
+				ce0 = peek(cvs, cc);
+				// The six interpolation curves: step, linear, accelerating,
+				// decelerating, smooth and bouncing. One flat chain, because
+				// gen~ rejects both a helper function for this and nested
+				// conditions.
+				es = tt;
+				if (ce0 < 0.5 && tt < 0.5) {
+					es = 0;
+				} else if (ce0 < 0.5) {
+					es = 1;
+				} else if (ce0 < 1.5) {
+					es = tt;
+				} else if (ce0 < 2.5) {
+					es = tt * tt * tt * tt;
+				} else if (ce0 < 3.5) {
+					eq = 1 - tt;
+					es = 1 - eq * eq * eq * eq;
+				} else if (ce0 < 4.5) {
+					es = 0.5 - 0.5 * cos(tt * pi);
+				} else if (tt < 0.363636363636) {
+					es = 7.5625 * tt * tt;
+				} else if (tt < 0.727272727273) {
+					eu = tt - 0.545454545455;
+					es = 7.5625 * eu * eu + 0.75;
+				} else if (tt < 0.909090909091) {
+					eu = tt - 0.818181818182;
+					es = 7.5625 * eu * eu + 0.9375;
+				} else {
+					eu = tt - 0.954545454545;
+					es = 7.5625 * eu * eu + 0.984375;
+				}
+				poke(lvl, (fa + (fb - fa) * es) / 65535, cc);
+			}
+			pid = peek(frkf, sa + 1);
+			pid = 3 * (pid - 8 * floor(pid / 8));
+			qid = peek(frkf, sb + 1);
+			qid = 3 * (qid - 8 * floor(qid / 8));
+			pa0 = peek(pal, pid);
+			pb0 = peek(pal, qid);
+			cr = pa0 + (pb0 - pa0) * tt;
+			pa0 = peek(pal, pid + 1);
+			pb0 = peek(pal, qid + 1);
+			cg = pa0 + (pb0 - pa0) * tt;
+			pa0 = peek(pal, pid + 2);
+			pb0 = peek(pal, qid + 2);
+			cb = pa0 + (pb0 - pa0) * tt;
+		}
+		tthis = efr;
+		if (eidx > 0) {
+			tp0 = peek(frkf, 2 + 6 * (eidx - 1));
+			tthis = efr - tp0;
+		}
+		tnext = 65536 - efr;
+		if (eidx < nkf) {
+			tn0 = peek(frkf, 2 + 6 * eidx);
+			tnext = tn0 - efr;
+		}
+		knear = eidx;
+		if (tnext < tthis) {
+			knear = eidx + 1;
+		}
+	}
+	for (cc = 0; cc < 4; cc += 1) {
+		lv0 = peek(lvl, cc);
+		rs0 = peek(rsp, cc);
+		// Level to VCA gain. The hardware drives a 2164 VCA whose control is
+		// exponential (-75 dB over the DAC range); "linear" goes through a
+		// table that undoes that. The response setting blends the two control
+		// codes.
+		vgl = 1;
+		if (lv0 > 0.000244140625) {
+			vgl = clamp(log(lv0) / -8.634694, 0, 1);
+		}
+		vgc = vgl + ((1 - lv0) - vgl) * rs0;
+		poke(lval, exp(-8.634694 * vgc) * min(1, lv0 * 4096), cc);
+	}
+} else {
+	// ------------------------------------------------------------ poly LFO
+	// FRAME is the rate: 0.013 Hz to 110 Hz.
+	ridx = sfr / 4096;
+	ri = min(floor(ridx), 15);
+	rf = ridx - ri;
+	ra0 = peek(rbw, ri * 3);
+	rb0 = peek(rbw, ri * 3 + 3);
+	cr = ra0 + (rb0 - ra0) * rf;
+	ra0 = peek(rbw, ri * 3 + 1);
+	rb0 = peek(rbw, ri * 3 + 4);
+	cg = ra0 + (rb0 - ra0) * rf;
+	ra0 = peek(rbw, ri * 3 + 2);
+	rb0 = peek(rbw, ri * 3 + 5);
+	cb = ra0 + (rb0 - ra0) * rf;
+
+	// Phase spread (right of centre): up to a quarter cycle between
+	// neighbours, all derived from the first LFO. Frequency spread (left of
+	// centre): up to an octave between neighbours, each LFO free-running.
+	// Both are computed for every channel, and ispos picks between them.
+	usp = clamp(pspread, -100, 100) * 0.01;
+	upos = max(usp, 0);
+	uneg = min(usp, 0);
+	ispos = usp >= 0;
+	fspread = (uneg - 3 * uneg * uneg) * 0.25;
+	lp0 = peek(lph, 0);
+	phb = lp0 + 110 * pow(2, sfr / 5040 - 13) / samplerate;
+	phb = phb - floor(phb);
+	for (cc = 0; cc < 4; cc += 1) {
+		lfc = sfr - 5040 * fspread * cc;
+		lp0 = peek(lph, cc);
+		lp = lp0 + 110 * pow(2, lfc / 5040 - 13) / samplerate;
+		lp = lp - floor(lp);
+		lq = phb + 0.25 * upos * cc;
+		lq = lq - floor(lq);
+		lp = ispos * lq + (1 - ispos) * lp;
+		poke(lph, lp, cc);
+	}
+
+	ucp = clamp(pcoup, -100, 100) * 0.01;
+	cpl = (ucp + 3 * ucp * abs(ucp)) * 0.25 * 0.15625;
+	wi = clamp(pshape, 0, 100) * 0.1599976;
+	wsp = clamp(pshspr, -100, 100) * 0.04;
+	for (cc = 0; cc < 4; cc += 1) {
+		// Each LFO's phase is pushed around by its neighbour's sine.
+		nb = cc + 1;
+		if (cpl <= 0) {
+			nb = cc + 3;
+		}
+		if (nb > 3) {
+			nb = nb - 4;
+		}
+		lp0 = peek(lph, cc);
+		ls0 = peek(lsn, nb);
+		lp = lp0 + ls0 * abs(cpl);
+		lp = lp - floor(lp);
+		pp = lp * 256;
+		pi0 = min(floor(pp), 255);
+		pf = pp - pi0;
+		// Channel cc is cc steps of shape spread along the wavetables, wrapped.
+		wic = wi + wsp * cc;
+		wic = wic - 16 * floor(wic / 16);
+		ta = min(floor(wic), 15);
+		tf = wic - ta;
+		ba = ta * 257 + pi0;
+		wa0 = peek(wt, ba);
+		wb0 = peek(wt, ba + 1);
+		va = wa0 + (wb0 - wa0) * pf;
+		wa0 = peek(wt, ba + 257);
+		wb0 = peek(wt, ba + 258);
+		vb = wa0 + (wb0 - wa0) * pf;
+		wa0 = peek(wt, 4369 + pi0);
+		wb0 = peek(wt, 4370 + pi0);
+		vs = wa0 + (wb0 - wa0) * pf;
+		poke(lsn, vs * 1.9921875 - 1, cc);
+		poke(lvl, va + (vb - va) * tf, cc);
+		poke(lval, va + (vb - va) * tf, cc);
+	}
+}
+
+// ---------------------------------------------------------------- FR.STEP
+// A 1 ms pulse each time the animation crosses a keyframe.
+if (kpos != h_ppos) {
+	if (canfire > 0) {
+		pulse = floor(samplerate * 0.001);
+		canfire = 0;
+	}
+}
+if (knear != h_pnear) {
+	canfire = 1;
+}
+trg = 0;
+if (pulse > 0) {
+	trg = 1;
+	pulse = pulse - 1;
+}
+
+// ---------------------------------------------------------------- VCAs
+gk = 1 - exp(-1 / (0.001 * samplerate));
+for (cc = 0; cc < 4; cc += 1) {
+	gs0 = peek(gsm, cc);
+	gl0 = peek(lval, cc);
+	poke(gsm, gs0 + (gl0 - gs0) * gk, cc);
+}
+g1 = peek(gsm, 0);
+g2 = peek(gsm, 1);
+g3 = peek(gsm, 2);
+g4 = peek(gsm, 3);
+
+// in1/in2 is ALL; in3..in10 are the four channel inputs, added to it.
+c1l = (in1 + in3) * g1;
+c1r = (in2 + in4) * g1;
+c2l = (in1 + in5) * g2;
+c2r = (in2 + in6) * g2;
+c3l = (in1 + in7) * g3;
+c3r = (in2 + in8) * g3;
+c4l = (in1 + in9) * g4;
+c4r = (in2 + in10) * g4;
+
+out1 = c1l * pmx1 + c2l * pmx2 + c3l * pmx3 + c4l * pmx4;
+out2 = c1r * pmx1 + c2r * pmx2 + c3r * pmx3 + c4r * pmx4;
+out3 = c1l;
+out4 = c1r;
+out5 = c2l;
+out6 = c2r;
+out7 = c3l;
+out8 = c3r;
+out9 = c4l;
+out10 = c4r;
+out11 = trg;
+out12 = g1;
+out13 = g2;
+out14 = g3;
+out15 = g4;
+out16 = peek(lvl, 0);
+out17 = peek(lvl, 1);
+out18 = peek(lvl, 2);
+out19 = peek(lvl, 3);
+out20 = act + 1;
+
+// Stored levels of the keyframe under the FRAME control, for the patch to show
+// on the level controls.
+av1 = kv1;
+av2 = kv2;
+av3 = kv3;
+av4 = kv4;
+if (act >= 0) {
+	av1 = peek(frkf, 4 + 6 * act);
+	av2 = peek(frkf, 5 + 6 * act);
+	av3 = peek(frkf, 6 + 6 * act);
+	av4 = peek(frkf, 7 + 6 * act);
+}
+out21 = av1 / 655.35;
+out22 = av2 / 655.35;
+out23 = av3 / 655.35;
+out24 = av4 / 655.35;
+out25 = rev;
+out26 = jser;
+out27 = jtgt;
+out28 = cr / 255;
+out29 = cg / 255;
+out30 = cb / 255;
+out31 = nkf;
+
+h_inited = 1;
+h_add = padd;
+h_del = pdel;
+h_clr = pclr;
+h_step = pstep;
+h_ev1 = pev1;
+h_ev2 = pev2;
+h_ev3 = pev3;
+h_ev4 = pev4;
+h_keyev = pkeyev;
+h_seq = sq;
+h_si = si;
+h_bph = in11;
+h_sframe = sfr;
+h_ppos = kpos;
+h_pnear = knear;
+h_canfire = canfire;
+h_pulse = pulse;
+h_rev = rev;
+h_js = jser;
+h_jt = jtgt;
