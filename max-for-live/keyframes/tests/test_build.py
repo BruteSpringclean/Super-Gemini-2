@@ -93,6 +93,27 @@ class BuildTest(unittest.TestCase):
                 self.assertGreaterEqual(depth, 0, "line %d" % number)
             self.assertEqual(depth, 0, "line %d" % number)
 
+    def test_variables_are_first_assigned_at_the_top_level(self):
+        # gen~ fails with "variable x is not defined" for a variable whose
+        # first assignment is inside an if, else or for block.
+        lines = self.code.splitlines()
+        start = next(i for i, l in enumerate(lines) if l.startswith("Buffer frkf"))
+        seen = set(re.findall(r"^(?:Param|History|Data) (\w+)\(", self.code, re.M))
+        depth = 0
+        for number, line in enumerate(lines[start:], start + 1):
+            code = line.split("//")[0]
+            found = re.findall(r"\bfor \((\w+) =", code)
+            m = re.match(r"^\s*([A-Za-z_]\w*)\s*(?:[-+*/]?=)(?!=)", code)
+            if m:
+                found.append(m.group(1))
+            for name in found:
+                if name.startswith(("out", "h_")) or name in seen:
+                    continue
+                self.assertEqual(depth, 0,
+                                 "line %d: %s first assigned inside a block" % (number, name))
+                seen.add(name)
+            depth += code.count("{") - code.count("}")
+
     def test_every_gen_parameter_has_a_control(self):
         declared = set(re.findall(r"^Param (\w+)\(", self.code, re.M))
         sent = {b["text"].split()[1] for b in self.boxes.values()
