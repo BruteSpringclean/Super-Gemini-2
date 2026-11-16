@@ -7018,7 +7018,7 @@
 						100,
 						22
 					],
-					"text": "build 7",
+					"text": "Clr",
 					"presentation": 1,
 					"presentation_rect": [
 						272,

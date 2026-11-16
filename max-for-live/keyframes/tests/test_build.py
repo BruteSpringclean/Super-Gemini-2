@@ -114,6 +114,15 @@ class BuildTest(unittest.TestCase):
                 seen.add(name)
             depth += code.count("{") - code.count("}")
 
+    def test_diagnostic_versions(self):
+        variants = build.diagnostic_codes(self.code)
+        self.assertEqual(len(variants), 6)
+        for n, variant, _ in variants:
+            self.assertTrue(variant.startswith(self.code[:200]))
+            self.assertIn("out31 = nkf;", variant)
+            self.assertEqual(variant.count("---- tables"), 1 if n else 0)
+        self.assertLess(len(variants[0][1]), len(variants[5][1]))
+
     def test_every_gen_parameter_has_a_control(self):
         declared = set(re.findall(r"^Param (\w+)\(", self.code, re.M))
         sent = {b["text"].split()[1] for b in self.boxes.values()

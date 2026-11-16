@@ -11,7 +11,9 @@ Nothing but the Python standard library is needed.
 """
 import json
 import os
+import re
 import struct
+import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 GEN_INLETS = 11
@@ -163,7 +165,7 @@ def gen_patcher(code):
             "boxes": boxes, "lines": lines}
 
 
-def build_patch(code):
+def build_patch(code, label=None):
     p = Patch()
 
     # ---------------------------------------------------------------- audio
@@ -449,7 +451,7 @@ def build_patch(code):
         p.line(unmap_split, 0, clear_name, 0)
         p.line(clear_name, 0, name, 0)
 
-    p.box("comment", 1, 0, text="build %d" % BUILD, presentation=1,
+    p.box("comment", 1, 0, text=label or "build %d" % BUILD, presentation=1,
           presentation_rect=[272, 160, 94, 12], fontsize=8.0)
     return p
 
@@ -509,7 +511,42 @@ def amxd_bytes(text):
             b"ptch" + struct.pack("<I", len(body)) + body)
 
 
+def diagnostic_codes(code):
+    """Cut-down versions of the gen~ code, to find what gen~ rejects.
+
+    Version n keeps the declarations, the first n sections of the per-sample
+    code, and the final outputs. Every variable is declared at the top, so a
+    section that is left out just leaves its variables at zero.
+    """
+    marks = [m for m in re.finditer(r"^// -{64} (.+)$", code, re.M)]
+    names = [m.group(1) for m in marks]
+    assert names[-1] == "VCAs" and names[0] == "tables", names
+    header = code[:marks[0].start()]
+    footer = code[marks[-1].start():]
+    sections = [code[marks[i].start():marks[i + 1].start()]
+                for i in range(len(marks) - 1)]
+    return [(n, header + "".join(sections[:n]) + footer,
+             names[n - 1] if n else "declarations only")
+            for n in range(len(sections))]
+
+
+def write_diagnostics(directory):
+    os.makedirs(directory, exist_ok=True)
+    with open(os.path.join(HERE, "src", "keyframes.genexpr")) as f:
+        code = f.read()
+    for n, variant, last in diagnostic_codes(code):
+        text = json.dumps(patcher_json(build_patch(variant, "diag %d" % n)),
+                          indent="\t") + "\n"
+        path = os.path.join(directory, "Keyframes-diag-%d.amxd" % n)
+        with open(path, "wb") as f:
+            f.write(amxd_bytes(text))
+        print("diag %d: up to %s" % (n, last))
+
+
 def main():
+    if len(sys.argv) == 3 and sys.argv[1] == "--diagnose":
+        write_diagnostics(sys.argv[2])
+        return
     with open(os.path.join(HERE, "src", "keyframes.genexpr")) as f:
         code = f.read()
     text = json.dumps(patcher_json(build_patch(code)), indent="\t") + "\n"
