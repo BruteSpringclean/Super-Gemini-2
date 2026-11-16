@@ -206,6 +206,7 @@ History h_js(0);
 History h_jt(0);
 
 // Loop counters, declared once at the top level.
+kts = 0;
 ii = 0;
 cc = 0;
 kk = 0;
@@ -341,7 +342,8 @@ ufr = floor(clamp(pframe, 0, 100) * 655.35 + 0.5);
 // Index of the first keyframe at or after the FRAME control.
 uidx = 0;
 for (ii = 0; ii < nkf; ii += 1) {
-	if (peek(frkf, 2 + 6 * ii) < ufr) {
+	kts = peek(frkf, 2 + 6 * ii);
+	if (kts < ufr) {
 		uidx = ii + 1;
 	}
 }
@@ -492,7 +494,8 @@ if (pmode < 1.5) {
 	} else {
 		eidx = 0;
 		for (ii = 0; ii < nkf; ii += 1) {
-			if (peek(frkf, 2 + 6 * ii) < efr) {
+			kts = peek(frkf, 2 + 6 * ii);
+			if (kts < efr) {
 				eidx = ii + 1;
 			}
 		}

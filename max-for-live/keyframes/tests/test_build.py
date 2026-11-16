@@ -67,6 +67,14 @@ class BuildTest(unittest.TestCase):
         self.assertEqual(gen[0]["numinlets"], build.GEN_INLETS)
         self.assertEqual(gen[0]["numoutlets"], build.GEN_OUTLETS)
 
+    def test_gen_code_avoids_constructs_gen_rejects(self):
+        # gen~ hoists each peek() into a hidden variable; in a condition that
+        # variable is not defined and the whole gen~ fails to compile.
+        for number, line in enumerate(self.code.splitlines(), 1):
+            code = line.split("//")[0]
+            if re.search(r"\b(if|for|while)\b", code):
+                self.assertNotIn("peek(", code, "line %d: %s" % (number, line))
+
     def test_every_gen_parameter_has_a_control(self):
         declared = set(re.findall(r"^Param (\w+)\(", self.code, re.M))
         sent = {b["text"].split()[1] for b in self.boxes.values()
