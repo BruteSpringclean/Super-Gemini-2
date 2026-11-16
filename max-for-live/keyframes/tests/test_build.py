@@ -125,7 +125,7 @@ class BuildTest(unittest.TestCase):
 
     def test_frame_diagnostic_versions(self):
         variants = build.frame_variants(self.code)
-        self.assertEqual(len(variants), 7)
+        self.assertEqual(len(variants), 6)
         for _, variant in variants:
             self.assertIn("out31 = nkf;", variant)
             self.assertEqual(variant.count("{"), variant.count("}"))

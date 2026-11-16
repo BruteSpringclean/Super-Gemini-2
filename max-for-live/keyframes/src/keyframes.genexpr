@@ -1,4 +1,4 @@
-// Keyframes - gen~ core. Build 8.
+// Keyframes - gen~ core. Build 9.
 //
 // A port of the Mutable Instruments Frames firmware (keyframer.cc, poly_lfo.cc,
 // frames.cc), Copyright 2013 Emilie Gillet, released under the MIT license.
@@ -12,57 +12,6 @@
 // GenExpr that is valid JavaScript once the declarations are stripped: every
 // variable is assigned before it is read, and a History is read only at the
 // top of the sample and written only at the bottom.
-
-// The six interpolation curves: step, linear, accelerating, decelerating,
-// smooth, bouncing.
-ease(e_t, e_curve) {
-	e_s = e_t;
-	e_q = 0;
-	e_u = 0;
-	if (e_curve < 0.5) {
-		e_s = 0;
-		if (e_t >= 0.5) {
-			e_s = 1;
-		}
-	} else if (e_curve < 1.5) {
-		e_s = e_t;
-	} else if (e_curve < 2.5) {
-		e_s = e_t * e_t * e_t * e_t;
-	} else if (e_curve < 3.5) {
-		e_q = 1 - e_t;
-		e_s = 1 - e_q * e_q * e_q * e_q;
-	} else if (e_curve < 4.5) {
-		e_s = 0.5 - 0.5 * cos(e_t * pi);
-	} else {
-		// Bounce (a function of its own would be a function calling a
-		// function, which gen~ may not accept).
-		if (e_t < 0.363636363636) {
-			e_s = 7.5625 * e_t * e_t;
-		} else if (e_t < 0.727272727273) {
-			e_u = e_t - 0.545454545455;
-			e_s = 7.5625 * e_u * e_u + 0.75;
-		} else if (e_t < 0.909090909091) {
-			e_u = e_t - 0.818181818182;
-			e_s = 7.5625 * e_u * e_u + 0.9375;
-		} else {
-			e_u = e_t - 0.954545454545;
-			e_s = 7.5625 * e_u * e_u + 0.984375;
-		}
-	}
-	return e_s;
-}
-
-// Level (0..1) to VCA gain. The hardware drives a 2164 VCA whose control is
-// exponential (-75 dB over the DAC range); "linear" goes through a table that
-// undoes that. The response setting blends the two control codes.
-vcagain(g_l, g_bal) {
-	g_lc = 1;
-	if (g_l > 0.000244140625) {
-		g_lc = clamp(log(g_l) / -8.634694, 0, 1);
-	}
-	g_c = g_lc + ((1 - g_l) - g_lc) * g_bal;
-	return exp(-8.634694 * g_c) * min(1, g_l * 4096);
-}
 
 // One point of a Poly LFO wavetable before it is normalised. Tables 12
 // (stepped triangle) and 16 (random) are built in the main code.
@@ -325,6 +274,12 @@ lq = 0;
 phb = 0;
 uneg = 0;
 upos = 0;
+
+eq = 0;
+es = 0;
+eu = 0;
+vgc = 0;
+vgl = 0;
 
 // ---------------------------------------------------------------- tables
 if (h_inited == 0) {
@@ -647,7 +602,37 @@ if (pmode < 1.5) {
 				fa = peek(frkf, sa + 2 + cc);
 				fb = peek(frkf, sb + 2 + cc);
 				ce0 = peek(cvs, cc);
-				poke(lvl, (fa + (fb - fa) * ease(tt, ce0)) / 65535, cc);
+				// The six interpolation curves: step, linear, accelerating,
+				// decelerating, smooth and bouncing. One flat chain, because
+				// gen~ rejects both a helper function for this and nested
+				// conditions.
+				es = tt;
+				if (ce0 < 0.5 && tt < 0.5) {
+					es = 0;
+				} else if (ce0 < 0.5) {
+					es = 1;
+				} else if (ce0 < 1.5) {
+					es = tt;
+				} else if (ce0 < 2.5) {
+					es = tt * tt * tt * tt;
+				} else if (ce0 < 3.5) {
+					eq = 1 - tt;
+					es = 1 - eq * eq * eq * eq;
+				} else if (ce0 < 4.5) {
+					es = 0.5 - 0.5 * cos(tt * pi);
+				} else if (tt < 0.363636363636) {
+					es = 7.5625 * tt * tt;
+				} else if (tt < 0.727272727273) {
+					eu = tt - 0.545454545455;
+					es = 7.5625 * eu * eu + 0.75;
+				} else if (tt < 0.909090909091) {
+					eu = tt - 0.818181818182;
+					es = 7.5625 * eu * eu + 0.9375;
+				} else {
+					eu = tt - 0.954545454545;
+					es = 7.5625 * eu * eu + 0.984375;
+				}
+				poke(lvl, (fa + (fb - fa) * es) / 65535, cc);
 			}
 			pid = peek(frkf, sa + 1);
 			pid = 3 * (pid - 8 * floor(pid / 8));
@@ -681,7 +666,16 @@ if (pmode < 1.5) {
 	for (cc = 0; cc < 4; cc += 1) {
 		lv0 = peek(lvl, cc);
 		rs0 = peek(rsp, cc);
-		poke(lval, vcagain(lv0, rs0), cc);
+		// Level to VCA gain. The hardware drives a 2164 VCA whose control is
+		// exponential (-75 dB over the DAC range); "linear" goes through a
+		// table that undoes that. The response setting blends the two control
+		// codes.
+		vgl = 1;
+		if (lv0 > 0.000244140625) {
+			vgl = clamp(log(lv0) / -8.634694, 0, 1);
+		}
+		vgc = vgl + ((1 - lv0) - vgl) * rs0;
+		poke(lval, exp(-8.634694 * vgc) * min(1, lv0 * 4096), cc);
 	}
 } else {
 	// ------------------------------------------------------------ poly LFO
